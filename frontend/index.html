@@ -8,19 +8,15 @@
   <style>
     :root {
       --maroon: #6f1a2c;
-      --maroon-dark: #501320;
       --lavender: #dde3f5;
       --lavender-border: #c3cced;
-      --green: #2e7d46;
-      --green-dark: #235c34;
       --gray: #6c757d;
-      --gray-dark: #565e64;
       --bg: #f4f5f7;
       --border: #d0d3dc;
       --text: #222;
       --muted: #6b6f76;
       --claimed-bg: #fff3cd;
-      --claimed-border: #e4c46b;
+      --posted-bg: #e8f3ec;
     }
 
     * {
@@ -120,12 +116,12 @@
       cursor: pointer;
     }
 
-    .button:hover {
+    .button:hover:not(:disabled) {
       filter: brightness(0.92);
     }
 
     .button-refresh {
-      background: var(--green);
+      background: var(--gray);
     }
 
     .button-normalizer {
@@ -141,6 +137,13 @@
 
     .button-posted {
       background: var(--gray);
+      min-height: 30px;
+      padding: 5px 10px;
+      font-size: 12px;
+    }
+
+    .button-not-posted {
+      background: #a15c00;
       min-height: 30px;
       padding: 5px 10px;
       font-size: 12px;
@@ -177,6 +180,10 @@
       background: var(--claimed-bg);
     }
 
+    tr.posted-row {
+      background: var(--posted-bg);
+    }
+
     .article-link {
       color: var(--maroon);
       font-weight: 700;
@@ -196,7 +203,7 @@
       white-space: nowrap;
     }
 
-    .status-unclaimed {
+    .status-available {
       color: var(--muted);
     }
 
@@ -205,10 +212,21 @@
       font-weight: 700;
     }
 
+    .status-posted {
+      color: #23643a;
+      font-weight: 700;
+    }
+
     .actions {
       display: flex;
       gap: 8px;
       white-space: nowrap;
+    }
+
+    .empty-message {
+      color: var(--muted);
+      text-align: center;
+      padding: 24px;
     }
 
     .footer-note {
@@ -233,35 +251,24 @@
         <div class="field">
           <label for="repositoryFilter">Article Repository</label>
           <select id="repositoryFilter">
-            <option>Recall</option>
-            <option>Recall New Build</option>
-            <option>RegSource GRC</option>
+            <option value="Recall">Recall</option>
+            <option value="Recall New Build">Recall New Build</option>
+            <option value="RegSource GRC">RegSource GRC</option>
           </select>
         </div>
 
         <div class="field">
-          <label for="ageFilter">Publication Age</label>
-          <select id="ageFilter">
-            <option>Today</option>
-            <option>Yesterday</option>
-            <option>Last 2 Days</option>
-            <option>Last 3 Days</option>
-            <option>All Recent Articles</option>
-          </select>
+          <label for="dateFilter">Publication Date</label>
+          <select id="dateFilter"></select>
         </div>
 
-        <div class="field">
-          <label for="userSelect">I Am</label>
-          <select id="userSelect">
-            <option>Choose name</option>
-            <option>David</option>
-            <option>Team Member 2</option>
-            <option>Team Member 3</option>
-          </select>
-        </div>
+        <button id="refreshButton" class="button button-refresh" type="button">
+          Refresh Articles
+        </button>
 
-        <button class="button button-refresh" type="button">Refresh Articles</button>
-        <button class="button button-normalizer" type="button">Open Normalizer</button>
+        <button id="normalizerButton" class="button button-normalizer" type="button">
+          Open Normalizer
+        </button>
       </div>
 
       <div class="table-wrap">
@@ -270,62 +277,12 @@
             <tr>
               <th>Article Title</th>
               <th>Source</th>
-              <th>Published</th>
+              <th>Publication Date</th>
               <th>Claim Status</th>
               <th>Actions</th>
             </tr>
           </thead>
-
-          <tbody>
-            <tr>
-              <td>
-                <a class="article-link" href="#" target="_blank">
-                  Sample: Nuclear Industry Update
-                </a>
-              </td>
-              <td class="source">World Nuclear News</td>
-              <td class="date">Today, 9:15 AM</td>
-              <td class="status-unclaimed">Available</td>
-              <td>
-                <div class="actions">
-                  <button class="button button-claim" type="button">Claim</button>
-                  <button class="button button-posted" type="button">Mark Posted</button>
-                </div>
-              </td>
-            </tr>
-
-            <tr class="claimed-row">
-              <td>
-                <a class="article-link" href="#" target="_blank">
-                  Sample: Regulatory Announcement
-                </a>
-              </td>
-              <td class="source">NRC Press Releases</td>
-              <td class="date">Today, 8:40 AM</td>
-              <td class="status-claimed">Claimed by David</td>
-              <td>
-                <div class="actions">
-                  <button class="button button-posted" type="button">Mark Posted</button>
-                </div>
-              </td>
-            </tr>
-
-            <tr>
-              <td>
-                <a class="article-link" href="#" target="_blank">
-                  Sample: Energy Policy and Market News
-                </a>
-              </td>
-              <td class="source">Utility Dive</td>
-              <td class="date">Yesterday, 3:20 PM</td>
-              <td class="status-unclaimed">Not used for GRC</td>
-              <td>
-                <div class="actions">
-                  <button class="button button-posted" type="button">Mark Posted</button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
+          <tbody id="articleTableBody"></tbody>
         </table>
       </div>
     </section>
@@ -334,5 +291,271 @@
       Prototype using sample data only. Article feeds, claim saving, and posted status will be connected later.
     </p>
   </main>
+
+  <script>
+    const repositoryFilter = document.getElementById("repositoryFilter");
+    const dateFilter = document.getElementById("dateFilter");
+    const articleTableBody = document.getElementById("articleTableBody");
+    const refreshButton = document.getElementById("refreshButton");
+    const normalizerButton = document.getElementById("normalizerButton");
+
+    function dateAtDaysAgo(daysAgo, hour, minute) {
+      const date = new Date();
+      date.setDate(date.getDate() - daysAgo);
+      date.setHours(hour, minute, 0, 0);
+      return date;
+    }
+
+    const originalArticles = [
+      {
+        id: 1,
+        title: "Sample: Nuclear Industry Update",
+        source: "World Nuclear News",
+        repository: "Recall",
+        published: dateAtDaysAgo(0, 9, 15),
+        status: "Available",
+        statusBeforePosted: "Available"
+      },
+      {
+        id: 2,
+        title: "Sample: Reactor Operations Briefing",
+        source: "Nuclear Engineering International",
+        repository: "Recall",
+        published: dateAtDaysAgo(2, 10, 5),
+        status: "Claimed",
+        statusBeforePosted: "Claimed"
+      },
+      {
+        id: 3,
+        title: "Sample: New Nuclear Project Update",
+        source: "World Nuclear News",
+        repository: "Recall New Build",
+        published: dateAtDaysAgo(1, 11, 10),
+        status: "Available",
+        statusBeforePosted: "Available"
+      },
+      {
+        id: 4,
+        title: "Sample: Energy Development Announcement",
+        source: "Utility Dive",
+        repository: "Recall New Build",
+        published: dateAtDaysAgo(3, 13, 30),
+        status: "Posted",
+        statusBeforePosted: "Available"
+      },
+      {
+        id: 5,
+        title: "Sample: Regulatory Announcement",
+        source: "NRC Press Releases",
+        repository: "RegSource GRC",
+        published: dateAtDaysAgo(0, 8, 40),
+        status: "Available",
+        statusBeforePosted: "Available"
+      },
+      {
+        id: 6,
+        title: "Sample: Regulatory Compliance Notice",
+        source: "Federal Register",
+        repository: "RegSource GRC",
+        published: dateAtDaysAgo(2, 14, 20),
+        status: "Posted",
+        statusBeforePosted: "Available"
+      }
+    ];
+
+    let articles = [];
+
+    function resetArticles() {
+      articles = originalArticles.map(article => ({
+        ...article,
+        published: new Date(article.published)
+      }));
+    }
+
+    function dateKey(date) {
+      return [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, "0"),
+        String(date.getDate()).padStart(2, "0")
+      ].join("-");
+    }
+
+    function formatDropdownDate(date) {
+      return new Intl.DateTimeFormat("en-US", {
+        month: "long",
+        day: "numeric"
+      }).format(date);
+    }
+
+    function formatPublishedDate(date) {
+      return new Intl.DateTimeFormat("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit"
+      }).format(date);
+    }
+
+    function buildDateFilter() {
+      dateFilter.innerHTML = "";
+
+      const allOption = document.createElement("option");
+      allOption.value = "All";
+      allOption.textContent = "All";
+      dateFilter.appendChild(allOption);
+
+      for (let daysAgo = 0; daysAgo < 4; daysAgo++) {
+        const date = dateAtDaysAgo(daysAgo, 12, 0);
+        const option = document.createElement("option");
+        option.value = dateKey(date);
+        option.textContent = formatDropdownDate(date);
+        dateFilter.appendChild(option);
+      }
+    }
+
+    function getFilteredArticles() {
+      return articles.filter(article => {
+        const repositoryMatches =
+          article.repository === repositoryFilter.value;
+
+        const dateMatches =
+          dateFilter.value === "All" ||
+          dateKey(article.published) === dateFilter.value;
+
+        return repositoryMatches && dateMatches;
+      });
+    }
+
+    function getStatusClass(status) {
+      if (status === "Claimed") return "status-claimed";
+      if (status === "Posted") return "status-posted";
+      return "status-available";
+    }
+
+    function getRowClass(status) {
+      if (status === "Claimed") return "claimed-row";
+      if (status === "Posted") return "posted-row";
+      return "";
+    }
+
+    function renderArticles() {
+      const filteredArticles = getFilteredArticles();
+
+      if (filteredArticles.length === 0) {
+        articleTableBody.innerHTML = `
+          <tr>
+            <td colspan="5" class="empty-message">
+              No articles match the selected filters.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      articleTableBody.innerHTML = filteredArticles.map(article => {
+        const canClaim =
+          article.repository !== "RegSource GRC" &&
+          article.status !== "Posted";
+
+        const claimButton = canClaim
+          ? `
+            <button
+              class="button button-claim"
+              type="button"
+              data-action="claim"
+              data-id="${article.id}"
+            >
+              ${article.status === "Claimed" ? "Unclaim" : "Claim"}
+            </button>
+          `
+          : "";
+
+        const postButton = article.status === "Posted"
+          ? `
+            <button
+              class="button button-not-posted"
+              type="button"
+              data-action="not-posted"
+              data-id="${article.id}"
+            >
+              Not Posted
+            </button>
+          `
+          : `
+            <button
+              class="button button-posted"
+              type="button"
+              data-action="posted"
+              data-id="${article.id}"
+            >
+              Mark Posted
+            </button>
+          `;
+
+        return `
+          <tr class="${getRowClass(article.status)}">
+            <td>
+              <a class="article-link" href="#" onclick="return false;">
+                ${article.title}
+              </a>
+            </td>
+            <td class="source">${article.source}</td>
+            <td class="date">${formatPublishedDate(article.published)}</td>
+            <td class="${getStatusClass(article.status)}">${article.status}</td>
+            <td>
+              <div class="actions">
+                ${claimButton}
+                ${postButton}
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    articleTableBody.addEventListener("click", event => {
+      const button = event.target.closest("button[data-action]");
+      if (!button) return;
+
+      const articleId = Number(button.dataset.id);
+      const article = articles.find(item => item.id === articleId);
+      if (!article) return;
+
+      if (button.dataset.action === "claim") {
+        article.status =
+          article.status === "Claimed" ? "Available" : "Claimed";
+      }
+
+      if (button.dataset.action === "posted") {
+        article.statusBeforePosted = article.status;
+        article.status = "Posted";
+      }
+
+      if (button.dataset.action === "not-posted") {
+        article.status = article.statusBeforePosted || "Available";
+      }
+
+      renderArticles();
+    });
+
+    repositoryFilter.addEventListener("change", renderArticles);
+    dateFilter.addEventListener("change", renderArticles);
+
+    refreshButton.addEventListener("click", () => {
+      resetArticles();
+      repositoryFilter.value = "Recall";
+      dateFilter.value = "All";
+      renderArticles();
+    });
+
+    normalizerButton.addEventListener("click", () => {
+      alert("The Normalizer will be connected in a future version of this prototype.");
+    });
+
+    resetArticles();
+    buildDateFilter();
+    renderArticles();
+  </script>
 </body>
 </html>
