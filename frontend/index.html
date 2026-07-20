@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Certrec News Dashboard</title>
+
+  <style>
+    :root {
+      --maroon: #6f1a2c;
+      --maroon-dark: #501320;
+      --lavender: #dde3f5;
+      --lavender-border: #c3cced;
+      --green: #2e7d46;
+      --green-dark: #235c34;
+      --gray: #6c757d;
+      --gray-dark: #565e64;
+      --bg: #f4f5f7;
+      --border: #d0d3dc;
+      --text: #222;
+      --muted: #6b6f76;
+      --claimed-bg: #fff3cd;
+      --claimed-border: #e4c46b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .app-header {
+      background: var(--maroon);
+      color: #fff;
+      padding: 18px 28px;
+    }
+
+    .app-header h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 600;
+    }
+
+    .app-header p {
+      margin: 4px 0 0;
+      font-size: 13px;
+      color: #e8d7dc;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 24px auto;
+      padding: 0 16px 40px;
+    }
+
+    .panel {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      overflow: hidden;
+    }
+
+    .panel-heading {
+      background: var(--lavender);
+      color: var(--maroon);
+      border-bottom: 1px solid var(--lavender-border);
+      padding: 11px 16px;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: end;
+      gap: 14px;
+      flex-wrap: wrap;
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    select,
+    button {
+      min-height: 36px;
+      border-radius: 4px;
+      font: inherit;
+    }
+
+    select {
+      min-width: 180px;
+      padding: 7px 10px;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text);
+    }
+
+    .button {
+      border: none;
+      padding: 8px 14px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .button:hover {
+      filter: brightness(0.92);
+    }
+
+    .button-refresh {
+      background: var(--green);
+    }
+
+    .button-normalizer {
+      background: var(--maroon);
+    }
+
+    .button-claim {
+      background: #9a6700;
+      min-height: 30px;
+      padding: 5px 10px;
+      font-size: 12px;
+    }
+
+    .button-posted {
+      background: var(--gray);
+      min-height: 30px;
+      padding: 5px 10px;
+      font-size: 12px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 850px;
+    }
+
+    th,
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: middle;
+      font-size: 13px;
+    }
+
+    th {
+      background: #fafbfc;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    tr.claimed-row {
+      background: var(--claimed-bg);
+    }
+
+    .article-link {
+      color: var(--maroon);
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .article-link:hover {
+      text-decoration: underline;
+    }
+
+    .source {
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .date {
+      white-space: nowrap;
+    }
+
+    .status-unclaimed {
+      color: var(--muted);
+    }
+
+    .status-claimed {
+      color: #7a5400;
+      font-weight: 700;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .footer-note {
+      margin: 14px 2px 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+  </style>
+</head>
+
+<body>
+  <header class="app-header">
+    <h1>Certrec News Dashboard</h1>
+    <p>Recent article shortlist for approved article repositories</p>
+  </header>
+
+  <main class="container">
+    <section class="panel">
+      <div class="panel-heading">Article Shortlist</div>
+
+      <div class="toolbar">
+        <div class="field">
+          <label for="repositoryFilter">Article Repository</label>
+          <select id="repositoryFilter">
+            <option>Recall</option>
+            <option>Recall New Build</option>
+            <option>RegSource GRC</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="ageFilter">Publication Age</label>
+          <select id="ageFilter">
+            <option>Today</option>
+            <option>Yesterday</option>
+            <option>Last 2 Days</option>
+            <option>Last 3 Days</option>
+            <option>All Recent Articles</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="userSelect">I Am</label>
+          <select id="userSelect">
+            <option>Choose name</option>
+            <option>David</option>
+            <option>Team Member 2</option>
+            <option>Team Member 3</option>
+          </select>
+        </div>
+
+        <button class="button button-refresh" type="button">Refresh Articles</button>
+        <button class="button button-normalizer" type="button">Open Normalizer</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Article Title</th>
+              <th>Source</th>
+              <th>Published</th>
+              <th>Claim Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            <tr>
+              <td>
+                <a class="article-link" href="#" target="_blank">
+                  Sample: Nuclear Industry Update
+                </a>
+              </td>
+              <td class="source">World Nuclear News</td>
+              <td class="date">Today, 9:15 AM</td>
+              <td class="status-unclaimed">Available</td>
+              <td>
+                <div class="actions">
+                  <button class="button button-claim" type="button">Claim</button>
+                  <button class="button button-posted" type="button">Mark Posted</button>
+                </div>
+              </td>
+            </tr>
+
+            <tr class="claimed-row">
+              <td>
+                <a class="article-link" href="#" target="_blank">
+                  Sample: Regulatory Announcement
+                </a>
+              </td>
+              <td class="source">NRC Press Releases</td>
+              <td class="date">Today, 8:40 AM</td>
+              <td class="status-claimed">Claimed by David</td>
+              <td>
+                <div class="actions">
+                  <button class="button button-posted" type="button">Mark Posted</button>
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                <a class="article-link" href="#" target="_blank">
+                  Sample: Energy Policy and Market News
+                </a>
+              </td>
+              <td class="source">Utility Dive</td>
+              <td class="date">Yesterday, 3:20 PM</td>
+              <td class="status-unclaimed">Not used for GRC</td>
+              <td>
+                <div class="actions">
+                  <button class="button button-posted" type="button">Mark Posted</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <p class="footer-note">
+      Prototype using sample data only. Article feeds, claim saving, and posted status will be connected later.
+    </p>
+  </main>
+</body>
+</html>
