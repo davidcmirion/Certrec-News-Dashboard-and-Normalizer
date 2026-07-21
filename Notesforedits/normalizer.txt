@@ -1,0 +1,3 @@
+Everything disappears after you paste next portion
+Might need to revise accent process and have it auto replace because of news update on certrec
+Still not handling bolding 100%
