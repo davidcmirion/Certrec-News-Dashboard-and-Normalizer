@@ -346,262 +346,149 @@
   </main>
 
   <script>
-    const pasteBox = document.getElementById("pasteBox");
-    const outputBox = document.getElementById("outputBox");
-    const normalizeButton = document.getElementById("normalizeButton");
-    const clearButton = document.getElementById("clearButton");
-    const copyButton = document.getElementById("copyButton");
-    const copyMessage = document.getElementById("copyMessage");
-    const summary = document.getElementById("summary");
-    const summaryLines = document.getElementById("summaryLines");
-    const linkSummary = document.getElementById("linkSummary");
-    const changeNote = document.getElementById("changeNote");
+  const pasteBox = document.getElementById("pasteBox");
+  const outputBox = document.getElementById("outputBox");
+  const normalizeButton = document.getElementById("normalizeButton");
+  const clearButton = document.getElementById("clearButton");
+  const copyButton = document.getElementById("copyButton");
+  const copyMessage = document.getElementById("copyMessage");
+  const summary = document.getElementById("summary");
+  const summaryLines = document.getElementById("summaryLines");
+  const linkSummary = document.getElementById("linkSummary");
+  const changeNote = document.getElementById("changeNote");
 
-    const removableTags = new Set([
-      "table", "img", "picture", "figure", "figcaption",
-      "iframe", "video", "audio", "embed", "object",
-      "script", "style", "noscript", "svg", "canvas",
-      "form", "button", "input", "select", "textarea"
-    ]);
+  const removableTags = new Set([
+    "table", "img", "picture", "figure", "figcaption",
+    "iframe", "video", "audio", "embed", "object",
+    "script", "style", "noscript", "svg", "canvas",
+    "form", "button", "input", "select", "textarea"
+  ]);
 
-    const removableNamePattern =
-      /(ad|advert|promo|sponsor|related|recommend|sidebar|newsletter|subscribe|signup|social|share|navigation|navbar|menu|cookie|banner|outbrain|taboola|widget)/i;
+  const removableNamePattern =
+    /(ad|advert|promo|sponsor|related|recommend|sidebar|newsletter|subscribe|signup|social|share|navigation|navbar|menu|cookie|banner|outbrain|taboola|widget)/i;
 
-    const allowedTags = new Set([
-      "a", "strong", "b", "em", "i", "p", "ul", "ol", "li", "br"
-    ]);
+  const invisibleCharacters = new Set([
+    "\u00AD", "\u200B", "\u200C", "\u200D",
+    "\u200E", "\u200F", "\u2060", "\uFEFF"
+  ]);
 
-    const invisibleCharacters = new Set([
-      "\u00AD", "\u200B", "\u200C", "\u200D",
-      "\u200E", "\u200F", "\u2060", "\uFEFF"
-    ]);
+  const characterReplacements = {
+    "…": "...",
+    "½": "1/2",
+    "⅓": "1/3",
+    "⅔": "2/3",
+    "¼": "1/4",
+    "¾": "3/4",
+    "⅕": "1/5",
+    "⅖": "2/5",
+    "⅗": "3/5",
+    "⅘": "4/5",
+    "⅙": "1/6",
+    "⅚": "5/6",
+    "⅛": "1/8",
+    "⅜": "3/8",
+    "⅝": "5/8",
+    "⅞": "7/8",
+    "™": "(TM)",
+    "®": "(R)",
+    "©": "(C)",
+    "‰": " per mille",
+    "§": "",
+    "¶": "",
+    "←": "",
+    "↑": "",
+    "→": "",
+    "↓": "",
+    "⁰": "",
+    "¹": "",
+    "²": "",
+    "³": "",
+    "⁴": "",
+    "⁵": "",
+    "⁶": "",
+    "⁷": "",
+    "⁸": "",
+    "⁹": ""
+  };
 
-    const characterReplacements = {
-      "…": "...",
-      "½": "1/2",
-      "⅓": "1/3",
-      "⅔": "2/3",
-      "¼": "1/4",
-      "¾": "3/4",
-      "⅕": "1/5",
-      "⅖": "2/5",
-      "⅗": "3/5",
-      "⅘": "4/5",
-      "⅙": "1/6",
-      "⅚": "5/6",
-      "⅛": "1/8",
-      "⅜": "3/8",
-      "⅝": "5/8",
-      "⅞": "7/8",
-      "™": "(TM)",
-      "®": "(R)",
-      "©": "(C)",
-      "‰": " per mille",
-      "§": "",
-      "¶": "",
-      "←": "",
-      "↑": "",
-      "→": "",
-      "↓": "",
-      "⁰": "",
-      "¹": "",
-      "²": "",
-      "³": "",
-      "⁴": "",
-      "⁵": "",
-      "⁶": "",
-      "⁷": "",
-      "⁸": "",
-      "⁹": ""
+  const dashCharacters = new Set([
+    "‐", "‑", "‒", "–", "—", "―"
+  ]);
+
+  const smartQuoteCharacters = new Set([
+    "“", "”", "„", "‟", "«", "»",
+    "‘", "’", "‚", "‛", "‹", "›"
+  ]);
+
+  const mojibakeSequences = [
+    "â€™", "â€œ", "â€\u009D", "â€“", "â€”",
+    "â€¦", "Â®", "Â©", "Â°", "Â ", "Ã©",
+    "Ã¨", "Ã¼", "Ã¶", "Ã±", "Ã¡", "Ã³"
+  ];
+
+  function createStats() {
+    return {
+      smartQuotes: 0,
+      charactersNormalized: 0,
+      invisibleDeleted: 0,
+      unsafeLinksRemoved: 0,
+      links: []
     };
+  }
 
-    const dashCharacters = new Set([
-      "‐", "‑", "‒", "–", "—", "―"
-    ]);
+  function isSafeLink(href) {
+    try {
+      const parsed = new URL(href, window.location.href);
 
-    const smartQuoteCharacters = new Set([
-      "“", "”", "„", "‟", "«", "»",
-      "‘", "’", "‚", "‛", "‹", "›"
-    ]);
-
-    const mojibakeSequences = [
-      "â€™", "â€œ", "â€\u009D", "â€“", "â€”",
-      "â€¦", "Â®", "Â©", "Â°", "Â ", "Ã©",
-      "Ã¨", "Ã¼", "Ã¶", "Ã±", "Ã¡", "Ã³"
-    ];
-
-    function createStats() {
-      return {
-        smartQuotes: 0,
-        charactersNormalized: 0,
-        invisibleDeleted: 0,
-        unsafeLinksRemoved: 0,
-        links: []
-      };
-    }
-
-    function isSafeLink(href) {
-      try {
-        const parsed = new URL(href, window.location.href);
-        return ["http:", "https:", "mailto:"].includes(parsed.protocol);
-      } catch {
-        return false;
-      }
-    }
-
-    function shouldRemoveElement(element) {
-      const tag = element.tagName.toLowerCase();
-
-      if (removableTags.has(tag)) {
-        return true;
-      }
-
-      const identity = [
-        element.id,
-        element.className,
-        element.getAttribute("role"),
-        element.getAttribute("aria-label"),
-        element.getAttribute("data-testid")
-      ].filter(Boolean).join(" ");
-
-      return removableNamePattern.test(identity);
-    }
-
-    function appendCleanChildren(source, target) {
-      Array.from(source.childNodes).forEach(node => {
-        if (node.nodeType === Node.TEXT_NODE) {
-          target.appendChild(document.createTextNode(node.nodeValue));
-          return;
-        }
-
-        if (node.nodeType !== Node.ELEMENT_NODE) {
-          return;
-        }
-
-        if (shouldRemoveElement(node)) {
-          return;
-        }
-
-        const tag = node.tagName.toLowerCase();
-
-        if (tag === "a") {
-          const href = node.getAttribute("href") || "";
-
-          if (!isSafeLink(href)) {
-            appendCleanChildren(node, target);
-            return;
-          }
-
-          const link = document.createElement("a");
-          link.href = href;
-          link.target = "_blank";
-          link.rel = "noopener noreferrer";
-          appendCleanChildren(node, link);
-          target.appendChild(link);
-          return;
-        }
-
-        if (allowedTags.has(tag)) {
-          const cleanTag =
-            tag === "b" ? "strong" :
-            tag === "i" ? "em" :
-            tag;
-
-          const cleanElement = document.createElement(cleanTag);
-          appendCleanChildren(node, cleanElement);
-          target.appendChild(cleanElement);
-          return;
-        }
-
-        appendCleanChildren(node, target);
-      });
-    }
-
-    function cleanPastedHtml(html) {
-      const temporaryContainer = document.createElement("div");
-      temporaryContainer.innerHTML = html;
-
-      const result = document.createDocumentFragment();
-      appendCleanChildren(temporaryContainer, result);
-
-      const wrapper = document.createElement("div");
-      wrapper.appendChild(result);
-
-      while (
-        wrapper.firstChild &&
-        wrapper.firstChild.nodeType === Node.TEXT_NODE &&
-        wrapper.firstChild.textContent.trim() === ""
-      ) {
-        wrapper.removeChild(wrapper.firstChild);
-      }
-
-      return wrapper.innerHTML;
-    }
-
-    function addMarkedText(parent, originalText, title) {
-      const mark = document.createElement("mark");
-      mark.className = "normalized-change";
-      mark.title = title;
-      mark.textContent = originalText;
-      parent.appendChild(mark);
-    }
-
-    function hasMojibakeAt(text, position) {
-      return mojibakeSequences.find(sequence =>
-        text.slice(position, position + sequence.length) === sequence
+      return ["http:", "https:", "mailto:"].includes(
+        parsed.protocol
       );
+    } catch {
+      return false;
+    }
+  }
+
+  function shouldRemoveElement(element) {
+    const tag = element.tagName.toLowerCase();
+
+    if (removableTags.has(tag)) {
+      return true;
     }
 
-    function normalizeText(text, sourceParent, outputParent, stats) {
-      for (let index = 0; index < text.length; index++) {
-        const mojibake = hasMojibakeAt(text, index);
+    const identity = [
+      element.id,
+      element.className,
+      element.getAttribute("role"),
+      element.getAttribute("aria-label"),
+      element.getAttribute("data-testid")
+    ]
+      .filter(Boolean)
+      .join(" ");
 
-        if (mojibake) {
-          index += mojibake.length - 1;
-          continue;
-        }
+    return removableNamePattern.test(identity);
+  }
 
-        const character = text[index];
+  function getFormatting(element) {
+    const tag = element.tagName.toLowerCase();
+    const style = (element.getAttribute("style") || "").toLowerCase();
 
-        if (invisibleCharacters.has(character)) {
-          stats.invisibleDeleted++;
-          continue;
-        }
+    return {
+      isBold:
+        tag === "strong" ||
+        tag === "b" ||
+        /font-weight\s*:\s*(bold|[6-9]00)/.test(style),
 
-        if (smartQuoteCharacters.has(character)) {
-          const replacement =
-            ["‘", "’", "‚", "‛", "‹", "›"].includes(character) ? "'" : '"';
+      isItalic:
+        tag === "em" ||
+        tag === "i" ||
+        /font-style\s*:\s*italic/.test(style)
+    };
+  }
 
-          stats.smartQuotes++;
-          addMarkedText(sourceParent, character, "Changed to " + replacement);
-          outputParent.appendChild(document.createTextNode(replacement));
-          continue;
-        }
-
-        if (dashCharacters.has(character)) {
-          stats.charactersNormalized++;
-          addMarkedText(sourceParent, character, "Changed to hyphen");
-          outputParent.appendChild(document.createTextNode("-"));
-          continue;
-        }
-
-        if (Object.prototype.hasOwnProperty.call(characterReplacements, character)) {
-          const replacement = characterReplacements[character];
-
-          stats.charactersNormalized++;
-          addMarkedText(sourceParent, character, "Character normalized");
-          outputParent.appendChild(document.createTextNode(replacement));
-          continue;
-        }
-
-        sourceParent.appendChild(document.createTextNode(character));
-        outputParent.appendChild(document.createTextNode(character));
-      }
-    }
-
-    function normalizeNode(node, sourceParent, outputParent, stats) {
+  function appendCleanChildren(source, target) {
+    Array.from(source.childNodes).forEach(node => {
       if (node.nodeType === Node.TEXT_NODE) {
-        normalizeText(node.nodeValue, sourceParent, outputParent, stats);
+        target.appendChild(document.createTextNode(node.nodeValue));
         return;
       }
 
@@ -609,197 +496,526 @@
         return;
       }
 
+      if (shouldRemoveElement(node)) {
+        return;
+      }
+
       const tag = node.tagName.toLowerCase();
+      const { isBold, isItalic } = getFormatting(node);
 
       if (tag === "a") {
         const href = node.getAttribute("href") || "";
 
         if (!isSafeLink(href)) {
-          stats.unsafeLinksRemoved++;
-          Array.from(node.childNodes).forEach(child =>
-            normalizeNode(child, sourceParent, outputParent, stats)
-          );
+          appendCleanChildren(node, target);
           return;
         }
 
-        const sourceLink = document.createElement("a");
-        sourceLink.href = href;
-        sourceLink.target = "_blank";
-        sourceLink.rel = "noopener noreferrer";
+        const link = document.createElement("a");
+        link.href = href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
 
-        const outputLink = sourceLink.cloneNode(false);
+        appendCleanChildren(node, link);
+        target.appendChild(link);
+        return;
+      }
 
-        Array.from(node.childNodes).forEach(child =>
-          normalizeNode(child, sourceLink, outputLink, stats)
+      const structureTags = new Set([
+        "p", "ul", "ol", "li", "br"
+      ]);
+
+      if (structureTags.has(tag)) {
+        const structureElement = document.createElement(tag);
+
+        appendCleanChildren(node, structureElement);
+
+        if (isBold && isItalic) {
+          const strong = document.createElement("strong");
+          const em = document.createElement("em");
+
+          em.appendChild(structureElement);
+          strong.appendChild(em);
+          target.appendChild(strong);
+          return;
+        }
+
+        if (isBold) {
+          const strong = document.createElement("strong");
+          strong.appendChild(structureElement);
+          target.appendChild(strong);
+          return;
+        }
+
+        if (isItalic) {
+          const em = document.createElement("em");
+          em.appendChild(structureElement);
+          target.appendChild(em);
+          return;
+        }
+
+        target.appendChild(structureElement);
+        return;
+      }
+
+      if (isBold && isItalic) {
+        const strong = document.createElement("strong");
+        const em = document.createElement("em");
+
+        appendCleanChildren(node, em);
+        strong.appendChild(em);
+        target.appendChild(strong);
+        return;
+      }
+
+      if (isBold) {
+        const strong = document.createElement("strong");
+
+        appendCleanChildren(node, strong);
+        target.appendChild(strong);
+        return;
+      }
+
+      if (isItalic) {
+        const em = document.createElement("em");
+
+        appendCleanChildren(node, em);
+        target.appendChild(em);
+        return;
+      }
+
+      // Remove unsupported styling tags but preserve their text/content.
+      appendCleanChildren(node, target);
+    });
+  }
+
+  function cleanPastedHtml(html) {
+    const temporaryContainer = document.createElement("div");
+    temporaryContainer.innerHTML = html;
+
+    const result = document.createDocumentFragment();
+
+    appendCleanChildren(temporaryContainer, result);
+
+    const wrapper = document.createElement("div");
+    wrapper.appendChild(result);
+
+    while (
+      wrapper.firstChild &&
+      wrapper.firstChild.nodeType === Node.TEXT_NODE &&
+      wrapper.firstChild.textContent.trim() === ""
+    ) {
+      wrapper.removeChild(wrapper.firstChild);
+    }
+
+    return wrapper.innerHTML;
+  }
+
+  function addMarkedText(parent, originalText, title) {
+    const mark = document.createElement("mark");
+
+    mark.className = "normalized-change";
+    mark.title = title;
+    mark.textContent = originalText;
+
+    parent.appendChild(mark);
+  }
+
+  function hasMojibakeAt(text, position) {
+    return mojibakeSequences.find(sequence =>
+      text.slice(position, position + sequence.length) === sequence
+    );
+  }
+
+  function removeAccents(value) {
+    return value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  }
+
+  function normalizeText(text, sourceParent, outputParent, stats) {
+    for (let index = 0; index < text.length; index++) {
+      const mojibake = hasMojibakeAt(text, index);
+
+      if (mojibake) {
+        index += mojibake.length - 1;
+        continue;
+      }
+
+      const character = text[index];
+
+      if (invisibleCharacters.has(character)) {
+        stats.invisibleDeleted++;
+        continue;
+      }
+
+      const accentFreeCharacter = removeAccents(character);
+
+      if (accentFreeCharacter !== character) {
+        stats.charactersNormalized++;
+
+        addMarkedText(
+          sourceParent,
+          character,
+          "Accent removed: changed to " + accentFreeCharacter
         );
 
-        sourceParent.appendChild(sourceLink);
-        outputParent.appendChild(outputLink);
+        outputParent.appendChild(
+          document.createTextNode(accentFreeCharacter)
+        );
 
-        const label = outputLink.textContent.trim() || href;
-        stats.links.push({ href, label });
+        continue;
+      }
+
+      if (smartQuoteCharacters.has(character)) {
+        const replacement =
+          ["‘", "’", "‚", "‛", "‹", "›"].includes(character)
+            ? "'"
+            : '"';
+
+        stats.smartQuotes++;
+
+        addMarkedText(
+          sourceParent,
+          character,
+          "Changed to " + replacement
+        );
+
+        outputParent.appendChild(
+          document.createTextNode(replacement)
+        );
+
+        continue;
+      }
+
+      if (dashCharacters.has(character)) {
+        stats.charactersNormalized++;
+
+        addMarkedText(
+          sourceParent,
+          character,
+          "Changed to hyphen"
+        );
+
+        outputParent.appendChild(
+          document.createTextNode("-")
+        );
+
+        continue;
+      }
+
+      if (
+        Object.prototype.hasOwnProperty.call(
+          characterReplacements,
+          character
+        )
+      ) {
+        const replacement = characterReplacements[character];
+
+        stats.charactersNormalized++;
+
+        addMarkedText(
+          sourceParent,
+          character,
+          "Character normalized"
+        );
+
+        outputParent.appendChild(
+          document.createTextNode(replacement)
+        );
+
+        continue;
+      }
+
+      sourceParent.appendChild(
+        document.createTextNode(character)
+      );
+
+      outputParent.appendChild(
+        document.createTextNode(character)
+      );
+    }
+  }
+
+  function normalizeNode(node, sourceParent, outputParent, stats) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      normalizeText(
+        node.nodeValue,
+        sourceParent,
+        outputParent,
+        stats
+      );
+
+      return;
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return;
+    }
+
+    const tag = node.tagName.toLowerCase();
+
+    if (tag === "a") {
+      const href = node.getAttribute("href") || "";
+
+      if (!isSafeLink(href)) {
+        stats.unsafeLinksRemoved++;
+
+        Array.from(node.childNodes).forEach(child =>
+          normalizeNode(
+            child,
+            sourceParent,
+            outputParent,
+            stats
+          )
+        );
 
         return;
       }
 
-      const outputTag =
-        tag === "b" ? "strong" :
-        tag === "i" ? "em" :
-        tag;
+      const sourceLink = document.createElement("a");
+      sourceLink.href = href;
+      sourceLink.target = "_blank";
+      sourceLink.rel = "noopener noreferrer";
 
-      const sourceElement = document.createElement(outputTag);
-      const outputElement = document.createElement(outputTag);
+      const outputLink = sourceLink.cloneNode(false);
 
       Array.from(node.childNodes).forEach(child =>
-        normalizeNode(child, sourceElement, outputElement, stats)
+        normalizeNode(
+          child,
+          sourceLink,
+          outputLink,
+          stats
+        )
       );
 
-      sourceParent.appendChild(sourceElement);
-      outputParent.appendChild(outputElement);
+      sourceParent.appendChild(sourceLink);
+      outputParent.appendChild(outputLink);
+
+      const label = outputLink.textContent.trim() || href;
+
+      stats.links.push({
+        href,
+        label
+      });
+
+      return;
     }
 
-    function normalizeContent() {
-      const stats = createStats();
+    const outputTag =
+      tag === "b"
+        ? "strong"
+        : tag === "i"
+          ? "em"
+          : tag;
 
-      const sourceContainer = document.createElement("div");
-      const outputContainer = document.createElement("div");
+    const sourceElement = document.createElement(outputTag);
+    const outputElement = document.createElement(outputTag);
 
-      Array.from(pasteBox.childNodes).forEach(node =>
-        normalizeNode(node, sourceContainer, outputContainer, stats)
+    Array.from(node.childNodes).forEach(child =>
+      normalizeNode(
+        child,
+        sourceElement,
+        outputElement,
+        stats
+      )
+    );
+
+    sourceParent.appendChild(sourceElement);
+    outputParent.appendChild(outputElement);
+  }
+
+  function normalizeContent() {
+    const stats = createStats();
+
+    const sourceContainer = document.createElement("div");
+    const outputContainer = document.createElement("div");
+
+    Array.from(pasteBox.childNodes).forEach(node =>
+      normalizeNode(
+        node,
+        sourceContainer,
+        outputContainer,
+        stats
+      )
+    );
+
+    pasteBox.innerHTML = sourceContainer.innerHTML;
+    outputBox.innerHTML = outputContainer.innerHTML;
+
+    changeNote.hidden =
+      stats.smartQuotes === 0 &&
+      stats.charactersNormalized === 0;
+
+    renderSummary(stats);
+
+    copyMessage.classList.remove("show");
+  }
+
+  function addSummaryLine(label, count) {
+    const line = document.createElement("p");
+
+    line.className = "summary-line";
+    line.textContent = label + ": " + count;
+
+    summaryLines.appendChild(line);
+  }
+
+  function renderSummary(stats) {
+    summaryLines.innerHTML = "";
+    linkSummary.innerHTML = "";
+
+    if (stats.smartQuotes > 0) {
+      addSummaryLine(
+        "Smart quotes replaced",
+        stats.smartQuotes
       );
-
-      pasteBox.innerHTML = sourceContainer.innerHTML;
-      outputBox.innerHTML = outputContainer.innerHTML;
-
-      changeNote.hidden =
-        stats.smartQuotes === 0 &&
-        stats.charactersNormalized === 0;
-
-      renderSummary(stats);
-      copyMessage.classList.remove("show");
     }
 
-    function addSummaryLine(label, count) {
-      const line = document.createElement("p");
-      line.className = "summary-line";
-      line.textContent = label + ": " + count;
-      summaryLines.appendChild(line);
+    if (stats.charactersNormalized > 0) {
+      addSummaryLine(
+        "Characters normalized",
+        stats.charactersNormalized
+      );
     }
 
-    function renderSummary(stats) {
-      summaryLines.innerHTML = "";
-      linkSummary.innerHTML = "";
-
-      if (stats.smartQuotes > 0) {
-        addSummaryLine("Smart quotes replaced", stats.smartQuotes);
-      }
-
-      if (stats.charactersNormalized > 0) {
-        addSummaryLine("Characters normalized", stats.charactersNormalized);
-      }
-
-      if (stats.invisibleDeleted > 0) {
-        addSummaryLine("Invisible characters deleted", stats.invisibleDeleted);
-      }
-
-      if (stats.unsafeLinksRemoved > 0) {
-        addSummaryLine("Unsafe links removed", stats.unsafeLinksRemoved);
-      }
-
-      if (stats.links.length > 0) {
-        const title = document.createElement("div");
-        title.className = "link-summary-title";
-        title.textContent = "Links preserved: " + stats.links.length;
-
-        const list = document.createElement("ul");
-        list.className = "link-list";
-
-        stats.links.forEach(linkInfo => {
-          const item = document.createElement("li");
-
-          const check = document.createElement("span");
-          check.className = "link-check";
-          check.textContent = "✓";
-
-          const link = document.createElement("a");
-          link.href = linkInfo.href;
-          link.target = "_blank";
-          link.rel = "noopener noreferrer";
-          link.textContent = linkInfo.label;
-
-          item.append(check, link);
-          list.appendChild(item);
-        });
-
-        linkSummary.append(title, list);
-      }
-
-      if (
-        stats.smartQuotes === 0 &&
-        stats.charactersNormalized === 0 &&
-        stats.invisibleDeleted === 0 &&
-        stats.unsafeLinksRemoved === 0 &&
-        stats.links.length === 0
-      ) {
-        const noChanges = document.createElement("p");
-        noChanges.className = "summary-line";
-        noChanges.textContent = "No text normalization was needed.";
-        summaryLines.appendChild(noChanges);
-      }
-
-      summary.classList.add("show");
+    if (stats.invisibleDeleted > 0) {
+      addSummaryLine(
+        "Invisible characters deleted",
+        stats.invisibleDeleted
+      );
     }
 
-    pasteBox.addEventListener("paste", event => {
-      event.preventDefault();
+    if (stats.unsafeLinksRemoved > 0) {
+      addSummaryLine(
+        "Unsafe links removed",
+        stats.unsafeLinksRemoved
+      );
+    }
 
-      const clipboard = event.clipboardData || window.clipboardData;
-      const html = clipboard.getData("text/html");
-      const text = clipboard.getData("text/plain");
+    if (stats.links.length > 0) {
+      const title = document.createElement("div");
+      title.className = "link-summary-title";
+      title.textContent = "Links preserved: " + stats.links.length;
 
-      const sourceHtml = html || text.replace(/\r?/g, "<br>");
-      pasteBox.innerHTML = cleanPastedHtml(sourceHtml);
+      const list = document.createElement("ul");
+      list.className = "link-list";
 
-      outputBox.innerHTML = "";
-      summary.classList.remove("show");
-      changeNote.hidden = true;
-      copyMessage.classList.remove("show");
-    });
+      stats.links.forEach(linkInfo => {
+        const item = document.createElement("li");
 
-    normalizeButton.addEventListener("click", normalizeContent);
+        const check = document.createElement("span");
+        check.className = "link-check";
+        check.textContent = "✓";
 
-    clearButton.addEventListener("click", () => {
-      pasteBox.innerHTML = "";
-      outputBox.innerHTML = "";
-      summary.classList.remove("show");
-      changeNote.hidden = true;
-      copyMessage.classList.remove("show");
-    });
+        const link = document.createElement("a");
+        link.href = linkInfo.href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = linkInfo.label;
 
-    copyButton.addEventListener("click", () => {
-      const range = document.createRange();
-      range.selectNodeContents(outputBox);
+        item.append(check, link);
+        list.appendChild(item);
+      });
 
-      const selection = window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(range);
+      linkSummary.append(title, list);
+    }
 
-      let copied = false;
+    if (
+      stats.smartQuotes === 0 &&
+      stats.charactersNormalized === 0 &&
+      stats.invisibleDeleted === 0 &&
+      stats.unsafeLinksRemoved === 0 &&
+      stats.links.length === 0
+    ) {
+      const noChanges = document.createElement("p");
 
-      try {
-        copied = document.execCommand("copy");
-      } catch {
-        copied = false;
-      }
+      noChanges.className = "summary-line";
+      noChanges.textContent =
+        "No text normalization was needed.";
 
-      selection.removeAllRanges();
+      summaryLines.appendChild(noChanges);
+    }
 
-      copyMessage.textContent = copied
-        ? "Copied to clipboard."
-        : "Copy failed. Select the output and press Ctrl+C.";
+    summary.classList.add("show");
+  }
 
-      copyMessage.classList.add("show");
-    });
+  pasteBox.addEventListener("paste", event => {
+    event.preventDefault();
+
+    const clipboard =
+      event.clipboardData || window.clipboardData;
+
+    const html = clipboard.getData("text/html");
+    const text = clipboard.getData("text/plain");
+
+    const sourceHtml =
+      html || text.replace(/\r?/g, "<br>");
+
+    const cleanedHtml = cleanPastedHtml(sourceHtml);
+
+    // Retain existing text and add each new pasted item below it.
+    if (pasteBox.innerHTML.trim() && cleanedHtml.trim()) {
+      pasteBox.insertAdjacentHTML(
+        "beforeend",
+        "<p><br></p>"
+      );
+    }
+
+    pasteBox.insertAdjacentHTML(
+      "beforeend",
+      cleanedHtml
+    );
+
+    // New source text makes the previous output out of date.
+    outputBox.innerHTML = "";
+    summary.classList.remove("show");
+    changeNote.hidden = true;
+    copyMessage.classList.remove("show");
+  });
+
+  normalizeButton.addEventListener(
+    "click",
+    normalizeContent
+  );
+
+  clearButton.addEventListener("click", () => {
+    pasteBox.innerHTML = "";
+    outputBox.innerHTML = "";
+
+    summary.classList.remove("show");
+    changeNote.hidden = true;
+    copyMessage.classList.remove("show");
+  });
+
+  copyButton.addEventListener("click", () => {
+    const range = document.createRange();
+
+    range.selectNodeContents(outputBox);
+
+    const selection = window.getSelection();
+
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    let copied = false;
+
+    try {
+      copied = document.execCommand("copy");
+    } catch {
+      copied = false;
+    }
+
+    selection.removeAllRanges();
+
+    copyMessage.textContent = copied
+      ? "Copied to clipboard."
+      : "Copy failed. Select the output and press Ctrl+C.";
+
+    copyMessage.classList.add("show");
+  }); 
+  
   </script>
+
 </body>
 </html>
