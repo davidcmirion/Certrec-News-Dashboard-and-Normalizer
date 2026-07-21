@@ -83,6 +83,7 @@ function normalizeFeedSource(source) {
     feedType: source.feedType || "rss",
     url: source.url,
     library: source.library,
+    contentCategory: source.contentCategory,
     itemPath: source.itemPath || (source.feedType === "atom" ? "feed.entry" : "rss.channel.item"),
     titlePath: source.titlePath || "title",
     urlPath: source.urlPath || "link",
@@ -90,6 +91,75 @@ function normalizeFeedSource(source) {
     publishedAtPath: source.publishedAtPath || (source.feedType === "atom" ? "updated" : "pubDate"),
     guidPath: source.guidPath || (source.feedType === "atom" ? "id" : "guid")
   };
+}
+
+const nuclearKeywords = [
+  "nuclear",
+  "nuclear energy",
+  "nuclear power",
+  "nuclear fuel",
+  "nuclear waste",
+  "radioactive waste",
+  "spent fuel",
+  "fuel cycle",
+  "reactor",
+  "reactor vessel",
+  "advanced reactor",
+  "smr",
+  "small modular reactor",
+  "microreactor",
+  "fusion",
+  "fission",
+  "uranium",
+  "enriched uranium",
+  "enrichment",
+  "haleu",
+  "leu",
+  "triso",
+  "thorium",
+  "plutonium",
+  "isotope",
+  "radioisotope",
+  "radiological",
+  "radioactive",
+  "radiation",
+  "criticality",
+  "decommissioning",
+  "safeguards",
+  "nonproliferation",
+  "nrc",
+  "nuclear regulatory commission",
+  "iaea",
+  "nnsa",
+  "nei",
+  "candu",
+  "ap1000",
+  "bwrx",
+  "mox",
+  "fuel fabrication"
+];
+
+function buildKeywordPattern(keyword) {
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`, "i");
+}
+
+const nuclearKeywordPatterns = nuclearKeywords.map(buildKeywordPattern);
+
+function isNuclearRelatedArticle(article) {
+  const text = `${article.title || ""} ${article.summary || ""}`.toLowerCase();
+
+  return nuclearKeywordPatterns.some(pattern => pattern.test(text));
+}
+
+function getDestinationLibraries(article, source) {
+  if (source.contentCategory === "nuclear") {
+    return ["Recall", "Recall New Build"];
+  }
+
+  return isNuclearRelatedArticle(article)
+    ? ["Recall", "Recall New Build"]
+    : ["RegSourceGRC"];
 }
 
 function extractLinkValue(item, source) {
@@ -240,19 +310,22 @@ async function saveArticle(article, source) {
     );
 
     const articleId = articleResult.rows[0].id;
+    const destinationLibraries = getDestinationLibraries(article, source);
 
-    await client.query(
-      `
-        INSERT INTO article_library_matches (
-          article_id,
-          library,
-          match_rank
-        )
-        VALUES ($1, $2, 1)
-        ON CONFLICT (article_id, library) DO NOTHING
-      `,
-      [articleId, source.library]
-    );
+    for (const destinationLibrary of destinationLibraries) {
+      await client.query(
+        `
+          INSERT INTO article_library_matches (
+            article_id,
+            library,
+            match_rank
+          )
+          VALUES ($1, $2, 1)
+          ON CONFLICT (article_id, library) DO NOTHING
+        `,
+        [articleId, destinationLibrary]
+      );
+    }
 
     await client.query("COMMIT");
     return articleId;
@@ -333,6 +406,8 @@ async function refreshConfiguredArticles(sourceIds = null, options = {}) {
 module.exports = {
   cleanText,
   filterFeedItems,
+  getDestinationLibraries,
+  isNuclearRelatedArticle,
   normalizeFeedItems,
   normalizeFeedSource,
   parseFeedXml,

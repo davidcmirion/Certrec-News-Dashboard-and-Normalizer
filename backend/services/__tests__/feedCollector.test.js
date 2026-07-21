@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { parseFeedXml, refreshConfiguredArticles, normalizeFeedSource, filterFeedItems } = require('../feedCollector');
+const { parseFeedXml, refreshConfiguredArticles, normalizeFeedSource, filterFeedItems, getDestinationLibraries, isNuclearRelatedArticle } = require('../feedCollector');
 const feedSourcesModule = require('../../config/feedSources');
 
 const rssXml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -124,6 +124,37 @@ test('reports per-source errors without preventing another enabled source from b
     global.fetch = originalFetch;
     feedSourcesModule.feedSources = originalSources;
   }
+});
+
+test('routes nuclear articles to Recall and Recall New Build only', () => {
+  const article = {
+    title: 'SMR project advances in the United States',
+    summary: 'A new reactor vessel design will be tested.'
+  };
+
+  assert.equal(isNuclearRelatedArticle(article), true);
+  assert.deepEqual(getDestinationLibraries(article, {}), ['Recall', 'Recall New Build']);
+});
+
+test('routes non-nuclear articles to RegSourceGRC only', () => {
+  const article = {
+    title: 'Solar installation grows in the Midwest',
+    summary: 'A new renewable energy project is announced.'
+  };
+
+  assert.equal(isNuclearRelatedArticle(article), false);
+  assert.deepEqual(getDestinationLibraries(article, {}), ['RegSourceGRC']);
+});
+
+test('routes classification case-insensitively and honors contentCategory override', () => {
+  const article = {
+    title: 'NUCLEAR energy update',
+    summary: 'A record of reactor activity.'
+  };
+
+  assert.equal(isNuclearRelatedArticle(article), true);
+  assert.deepEqual(getDestinationLibraries(article, { contentCategory: 'nuclear' }), ['Recall', 'Recall New Build']);
+  assert.deepEqual(getDestinationLibraries({ title: 'Weather report', summary: 'No relevant content' }, { contentCategory: 'other' }), ['RegSourceGRC']);
 });
 
 test('skips invalid dates, missing required fields, and old articles', () => {
