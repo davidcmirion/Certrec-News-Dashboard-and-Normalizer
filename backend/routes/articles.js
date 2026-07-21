@@ -199,5 +199,48 @@ router.post("/:id/posted", async (req, res) => {
     res.status(500).json({ error: "Could not mark the article as posted." });
   }
 });
+// Return a posted article to available.
+router.post("/:id/not-posted", async (req, res) => {
+  const articleId = Number(req.params.id);
+
+  if (!Number.isInteger(articleId) || articleId < 1) {
+    return res.status(400).json({ error: "Invalid article ID." });
+  }
+
+  try {
+    const result = await pool.query(
+      `
+        UPDATE articles
+        SET
+          workflow_status = 'available',
+          claimed_library = NULL,
+          claimed_at = NULL,
+          posted_at = NULL,
+          updated_at = NOW()
+        WHERE id = $1
+          AND workflow_status = 'posted'
+        RETURNING *
+      `,
+      [articleId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(409).json({
+        error: "Only a currently posted article can be returned to available.",
+      });
+    }
+
+    res.json({
+      message: "Article returned to available.",
+      article: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Could not return article to available:", error);
+    res.status(500).json({
+      error: "Could not return the article to available.",
+    });
+  }
+});
 
 module.exports = router;
+
