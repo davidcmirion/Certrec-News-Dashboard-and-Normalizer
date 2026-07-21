@@ -4,6 +4,7 @@ const express = require("express");
 const cors = require("cors");
 
 const articlesRouter = require("./routes/articles");
+const refreshRouter = require("./routes/refresh");
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -22,6 +23,8 @@ app.get("/api/health", (req, res) => {
 });
 
 app.use("/api/articles", articlesRouter);
+app.use("/api/refresh", refreshRouter);
+
 
 app.use((req, res) => {
   res.status(404).json({

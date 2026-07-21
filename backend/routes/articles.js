@@ -27,12 +27,16 @@ router.get("/", async (req, res) => {
 
   try {
     const values = [];
-    let libraryFilter = "";
+const filters = [
+  "a.source_published_at >= CURRENT_DATE - INTERVAL '3 days'",
+];
 
-    if (library) {
-      values.push(library);
-      libraryFilter = "WHERE alm.library = $1";
-    }
+if (library) {
+  values.push(library);
+  filters.push(`alm.library = $${values.length}`);
+}
+
+const whereClause = `WHERE ${filters.join(" AND ")}`;
 
     const result = await pool.query(
       `
@@ -52,7 +56,7 @@ router.get("/", async (req, res) => {
         FROM articles AS a
         INNER JOIN article_library_matches AS alm
           ON alm.article_id = a.id
-        ${libraryFilter}
+        ${whereClause}
         ORDER BY
           alm.match_rank ASC,
           a.source_published_at DESC
