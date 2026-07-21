@@ -251,8 +251,8 @@
           <label for="repositoryFilter">Article Repository</label>
           <select id="repositoryFilter">
             <option value="Recall">Recall</option>
-            <option value="Recall New Build">Recall New Build</option>
-            <option value="RegSource GRC">RegSource GRC</option>
+            <option value="RecallNewBuild">Recall New Build</option>
+            <option value="RegSourceGRC">RegSource GRC</option>
           </select>
         </div>
 
@@ -292,269 +292,311 @@
   </main>
 
   <script>
-    const repositoryFilter = document.getElementById("repositoryFilter");
-    const dateFilter = document.getElementById("dateFilter");
-    const articleTableBody = document.getElementById("articleTableBody");
-    const refreshButton = document.getElementById("refreshButton");
-    const normalizerButton = document.getElementById("normalizerButton");
+    const API_BASE_URL = "https://laughing-broccoli-6v6p7j6pv4xc4pjg-3001.app.github.dev/api";
 
-    function dateAtDaysAgo(daysAgo, hour, minute) {
-      const date = new Date();
-      date.setDate(date.getDate() - daysAgo);
-      date.setHours(hour, minute, 0, 0);
-      return date;
+const repositoryFilter = document.getElementById("repositoryFilter");
+const dateFilter = document.getElementById("dateFilter");
+const articleTableBody = document.getElementById("articleTableBody");
+const refreshButton = document.getElementById("refreshButton");
+const normalizerButton = document.getElementById("normalizerButton");
+
+let articles = [];
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function dateKey(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0")
+  ].join("-");
+}
+
+function formatDropdownDate(date) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric"
+  }).format(date);
+}
+
+function formatPublishedDate(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return "Publication date unavailable";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function displayStatus(status) {
+  return String(status || "available")
+    .replace(/^./, character => character.toUpperCase());
+}
+
+function getStatusClass(status) {
+  if (status === "claimed") return "status-claimed";
+  if (status === "posted") return "status-posted";
+  return "status-available";
+}
+
+function getRowClass(status) {
+  if (status === "claimed") return "claimed-row";
+  if (status === "posted") return "posted-row";
+  return "";
+}
+
+function buildDateFilter() {
+  const selectedDate = dateFilter.value;
+
+  const dates = [...new Map(
+    articles
+      .filter(article => article.published && !Number.isNaN(article.published.getTime()))
+      .map(article => [dateKey(article.published), article.published])
+  ).entries()]
+    .sort(([firstKey], [secondKey]) => secondKey.localeCompare(firstKey));
+
+  dateFilter.innerHTML = "";
+
+  const allOption = document.createElement("option");
+  allOption.value = "All";
+  allOption.textContent = "All";
+  dateFilter.appendChild(allOption);
+
+  dates.forEach(([key, date]) => {
+    const option = document.createElement("option");
+    option.value = key;
+    option.textContent = formatDropdownDate(date);
+    dateFilter.appendChild(option);
+  });
+
+  dateFilter.value =
+    [...dateFilter.options].some(option => option.value === selectedDate)
+      ? selectedDate
+      : "All";
+}
+
+function getFilteredArticles() {
+  return articles.filter(article => {
+    return (
+      dateFilter.value === "All" ||
+      dateKey(article.published) === dateFilter.value
+    );
+  });
+}
+
+function renderArticles() {
+  const filteredArticles = getFilteredArticles();
+
+  if (filteredArticles.length === 0) {
+    articleTableBody.innerHTML = `
+      <tr>
+        <td colspan="5" class="empty-message">
+          No articles match the selected filters.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  articleTableBody.innerHTML = filteredArticles.map(article => {
+    const canClaim =
+      article.library !== "RegSourceGRC" &&
+      article.workflow_status !== "posted";
+
+    const claimButton = !canClaim
+      ? ""
+      : article.workflow_status === "claimed"
+        ? `
+          <button
+            class="button button-claim"
+            type="button"
+            data-action="release"
+            data-id="${article.id}"
+          >
+            Unclaim
+          </button>
+        `
+        : `
+          <button
+            class="button button-claim"
+            type="button"
+            data-action="claim"
+            data-id="${article.id}"
+          >
+            Claim
+          </button>
+        `;
+
+    const postButton = article.workflow_status === "posted"
+      ? `
+        <button
+          class="button button-not-posted"
+          type="button"
+          data-action="not-posted"
+          data-id="${article.id}"
+        >
+          Not Posted
+        </button>
+      `
+      : `
+        <button
+          class="button button-posted"
+          type="button"
+          data-action="posted"
+          data-id="${article.id}"
+        >
+          Mark Posted
+        </button>
+      `;
+
+    const safeTitle = escapeHtml(article.title || "Untitled article");
+    const articleTitle = article.canonical_url
+      ? `<a class="article-link" href="${escapeHtml(article.canonical_url)}" target="_blank" rel="noopener noreferrer">${safeTitle}</a>`
+      : `<span class="article-link">${safeTitle}</span>`;
+
+    return `
+      <tr class="${getRowClass(article.workflow_status)}">
+        <td>${articleTitle}</td>
+        <td class="source">${escapeHtml(article.source || "Unknown source")}</td>
+        <td class="date">${formatPublishedDate(article.published)}</td>
+        <td class="${getStatusClass(article.workflow_status)}">
+          ${displayStatus(article.workflow_status)}
+        </td>
+        <td>
+          <div class="actions">
+            ${claimButton}
+            ${postButton}
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+async function loadArticles() {
+  articleTableBody.innerHTML = `
+    <tr>
+      <td colspan="5" class="empty-message">Loading articles...</td>
+    </tr>
+  `;
+
+  try {
+    const library = repositoryFilter.value;
+
+    const response = await fetch(
+      `${API_BASE_URL}/articles?library=${encodeURIComponent(library)}`
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Could not load articles.");
     }
 
-    const originalArticles = [
-      {
-        id: 1,
-        title: "Sample: Nuclear Industry Update",
-        source: "World Nuclear News",
-        repository: "Recall",
-        published: dateAtDaysAgo(0, 9, 15),
-        status: "Available",
-        statusBeforePosted: "Available"
-      },
-      {
-        id: 2,
-        title: "Sample: Reactor Operations Briefing",
-        source: "Nuclear Engineering International",
-        repository: "Recall",
-        published: dateAtDaysAgo(2, 10, 5),
-        status: "Claimed",
-        statusBeforePosted: "Claimed"
-      },
-      {
-        id: 3,
-        title: "Sample: New Nuclear Project Update",
-        source: "World Nuclear News",
-        repository: "Recall New Build",
-        published: dateAtDaysAgo(1, 11, 10),
-        status: "Available",
-        statusBeforePosted: "Available"
-      },
-      {
-        id: 4,
-        title: "Sample: Energy Development Announcement",
-        source: "Utility Dive",
-        repository: "Recall New Build",
-        published: dateAtDaysAgo(3, 13, 30),
-        status: "Posted",
-        statusBeforePosted: "Available"
-      },
-      {
-        id: 5,
-        title: "Sample: Regulatory Announcement",
-        source: "NRC Press Releases",
-        repository: "RegSource GRC",
-        published: dateAtDaysAgo(0, 8, 40),
-        status: "Available",
-        statusBeforePosted: "Available"
-      },
-      {
-        id: 6,
-        title: "Sample: Regulatory Compliance Notice",
-        source: "Federal Register",
-        repository: "RegSource GRC",
-        published: dateAtDaysAgo(2, 14, 20),
-        status: "Posted",
-        statusBeforePosted: "Available"
+    articles = data.articles.map(article => ({
+      ...article,
+      published: article.source_published_at
+        ? new Date(article.source_published_at)
+        : null
+    }));
+
+    buildDateFilter();
+    renderArticles();
+  } catch (error) {
+    console.error(error);
+    articleTableBody.innerHTML = `
+      <tr>
+        <td colspan="5" class="empty-message">
+          Could not load articles: ${escapeHtml(error.message)}
+        </td>
+      </tr>
+    `;
+  }
+}
+
+async function updateArticle(articleId, action) {
+  const button = articleTableBody.querySelector(
+    `button[data-id="${articleId}"][data-action="${action}"]`
+  );
+
+  if (button) {
+    button.disabled = true;
+  }
+
+  try {
+    const requestOptions = {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
       }
-    ];
+    };
 
-    let articles = [];
-
-    function resetArticles() {
-      articles = originalArticles.map(article => ({
-        ...article,
-        published: new Date(article.published)
-      }));
-    }
-
-    function dateKey(date) {
-      return [
-        date.getFullYear(),
-        String(date.getMonth() + 1).padStart(2, "0"),
-        String(date.getDate()).padStart(2, "0")
-      ].join("-");
-    }
-
-    function formatDropdownDate(date) {
-      return new Intl.DateTimeFormat("en-US", {
-        month: "long",
-        day: "numeric"
-      }).format(date);
-    }
-
-    function formatPublishedDate(date) {
-      return new Intl.DateTimeFormat("en-US", {
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit"
-      }).format(date);
-    }
-
-    function buildDateFilter() {
-      dateFilter.innerHTML = "";
-
-      const allOption = document.createElement("option");
-      allOption.value = "All";
-      allOption.textContent = "All";
-      dateFilter.appendChild(allOption);
-
-      for (let daysAgo = 0; daysAgo < 4; daysAgo++) {
-        const date = dateAtDaysAgo(daysAgo, 12, 0);
-        const option = document.createElement("option");
-        option.value = dateKey(date);
-        option.textContent = formatDropdownDate(date);
-        dateFilter.appendChild(option);
-      }
-    }
-
-    function getFilteredArticles() {
-      return articles.filter(article => {
-        const repositoryMatches =
-          article.repository === repositoryFilter.value;
-
-        const dateMatches =
-          dateFilter.value === "All" ||
-          dateKey(article.published) === dateFilter.value;
-
-        return repositoryMatches && dateMatches;
+    if (action === "claim") {
+      requestOptions.body = JSON.stringify({
+        library: repositoryFilter.value
       });
     }
 
-    function getStatusClass(status) {
-      if (status === "Claimed") return "status-claimed";
-      if (status === "Posted") return "status-posted";
-      return "status-available";
+    const response = await fetch(
+      `${API_BASE_URL}/articles/${articleId}/${action}`,
+      requestOptions
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Could not update article.");
     }
 
-    function getRowClass(status) {
-      if (status === "Claimed") return "claimed-row";
-      if (status === "Posted") return "posted-row";
-      return "";
+    await loadArticles();
+  } catch (error) {
+    console.error(error);
+    window.alert(error.message);
+  } finally {
+    if (button) {
+      button.disabled = false;
     }
+  }
+}
 
-    function renderArticles() {
-      const filteredArticles = getFilteredArticles();
+articleTableBody.addEventListener("click", async event => {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
 
-      if (filteredArticles.length === 0) {
-        articleTableBody.innerHTML = `
-          <tr>
-            <td colspan="5" class="empty-message">
-              No articles match the selected filters.
-            </td>
-          </tr>
-        `;
-        return;
-      }
+  await updateArticle(Number(button.dataset.id), button.dataset.action);
+});
 
-      articleTableBody.innerHTML = filteredArticles.map(article => {
-        const canClaim =
-          article.repository !== "RegSource GRC" &&
-          article.status !== "Posted";
+repositoryFilter.addEventListener("change", async () => {
+  dateFilter.value = "All";
+  await loadArticles();
+});
 
-        const claimButton = canClaim
-          ? `
-            <button
-              class="button button-claim"
-              type="button"
-              data-action="claim"
-              data-id="${article.id}"
-            >
-              ${article.status === "Claimed" ? "Unclaim" : "Claim"}
-            </button>
-          `
-          : "";
+dateFilter.addEventListener("change", renderArticles);
 
-        const postButton = article.status === "Posted"
-          ? `
-            <button
-              class="button button-not-posted"
-              type="button"
-              data-action="not-posted"
-              data-id="${article.id}"
-            >
-              Not Posted
-            </button>
-          `
-          : `
-            <button
-              class="button button-posted"
-              type="button"
-              data-action="posted"
-              data-id="${article.id}"
-            >
-              Mark Posted
-            </button>
-          `;
+refreshButton.addEventListener("click", loadArticles);
 
-        return `
-          <tr class="${getRowClass(article.status)}">
-            <td>
-              <a class="article-link" href="#" onclick="return false;">
-                ${article.title}
-              </a>
-            </td>
-            <td class="source">${article.source}</td>
-            <td class="date">${formatPublishedDate(article.published)}</td>
-            <td class="${getStatusClass(article.status)}">${article.status}</td>
-            <td>
-              <div class="actions">
-                ${claimButton}
-                ${postButton}
-              </div>
-            </td>
-          </tr>
-        `;
-      }).join("");
-    }
-
-    articleTableBody.addEventListener("click", event => {
-      const button = event.target.closest("button[data-action]");
-      if (!button) return;
-
-      const articleId = Number(button.dataset.id);
-      const article = articles.find(item => item.id === articleId);
-      if (!article) return;
-
-      if (button.dataset.action === "claim") {
-        article.status =
-          article.status === "Claimed" ? "Available" : "Claimed";
-      }
-
-      if (button.dataset.action === "posted") {
-        article.statusBeforePosted = article.status;
-        article.status = "Posted";
-      }
-
-      if (button.dataset.action === "not-posted") {
-        article.status = article.statusBeforePosted || "Available";
-      }
-
-      renderArticles();
-    });
-
-    repositoryFilter.addEventListener("change", renderArticles);
-    dateFilter.addEventListener("change", renderArticles);
-
-    refreshButton.addEventListener("click", () => {
-      resetArticles();
-      repositoryFilter.value = "Recall";
-      dateFilter.value = "All";
-      renderArticles();
-    });
-
-    normalizerButton.addEventListener("click", () => {
+normalizerButton.addEventListener("click", () => {
   window.open("normalizer.html", "_blank", "noopener");
 });
 
-    resetArticles();
-    buildDateFilter();
-    renderArticles();
+loadArticles();
   </script>
 </body>
 </html>
