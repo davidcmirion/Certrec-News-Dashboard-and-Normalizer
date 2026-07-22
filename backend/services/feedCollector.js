@@ -153,13 +153,13 @@ function isNuclearRelatedArticle(article) {
 }
 
 function getDestinationLibraries(article, source) {
-  if (source.contentCategory === "nuclear") {
-    return ["Recall", "Recall New Build"];
+  const isNuclearRelated = source.contentCategory === "nuclear" || isNuclearRelatedArticle(article);
+
+  if (isNuclearRelated) {
+    return ["Recall", "RecallNewBuild"];
   }
 
-  return isNuclearRelatedArticle(article)
-    ? ["Recall", "Recall New Build"]
-    : ["RegSourceGRC"];
+  return ["RegSourceGRC"];
 }
 
 function extractLinkValue(item, source) {
@@ -312,6 +312,11 @@ async function saveArticle(article, source) {
     const articleId = articleResult.rows[0].id;
     const destinationLibraries = getDestinationLibraries(article, source);
 
+    await client.query(
+      `DELETE FROM article_library_matches WHERE article_id = $1`,
+      [articleId]
+    );
+
     for (const destinationLibrary of destinationLibraries) {
       await client.query(
         `
@@ -321,7 +326,6 @@ async function saveArticle(article, source) {
             match_rank
           )
           VALUES ($1, $2, 1)
-          ON CONFLICT (article_id, library) DO NOTHING
         `,
         [articleId, destinationLibrary]
       );

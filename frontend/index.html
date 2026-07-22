@@ -287,12 +287,12 @@
     </section>
 
     <p class="footer-note">
-      Article feed at 1, more to be added soon.
+      Article feed at 3, more to be added soon.
     </p>
   </main>
 
   <script>
-    const API_BASE_URL = "https://laughing-broccoli-6v6p7j6pv4xc4pjg-3001.app.github.dev/api";
+    const API_BASE_URL = "http://localhost:3001/api"; 
 
 const repositoryFilter = document.getElementById("repositoryFilter");
 const dateFilter = document.getElementById("dateFilter");
@@ -394,10 +394,15 @@ function buildDateFilter() {
 
 function getFilteredArticles() {
   return articles.filter(article => {
-    return (
+    const matchesDate =
       dateFilter.value === "All" ||
-      dateKey(article.published) === dateFilter.value
-    );
+      dateKey(article.published) === dateFilter.value;
+
+    const matchesLibrary =
+      !article.library ||
+      article.library === repositoryFilter.value;
+
+    return matchesDate && matchesLibrary;
   });
 }
 
@@ -590,7 +595,31 @@ repositoryFilter.addEventListener("change", async () => {
 
 dateFilter.addEventListener("change", renderArticles);
 
-refreshButton.addEventListener("click", loadArticles);
+refreshButton.addEventListener("click", async () => {
+  refreshButton.disabled = true;
+  refreshButton.textContent = "Refreshing...";
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/refresh/all`, {
+      method: "POST"
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Could not refresh article feeds.");
+    }
+
+    console.log("Feed refresh results:", data);
+    await loadArticles();
+  } catch (error) {
+    console.error(error);
+    window.alert(`Could not refresh articles: ${error.message}`);
+  } finally {
+    refreshButton.disabled = false;
+    refreshButton.textContent = "Refresh Articles";
+  }
+});
 
 normalizerButton.addEventListener("click", () => {
   window.open("normalizer.html", "_blank", "noopener");

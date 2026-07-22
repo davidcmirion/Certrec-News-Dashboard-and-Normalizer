@@ -12,6 +12,33 @@ let feedSources = [
     summaryPath: "description",
     publishedAtPath: "pubDate",
     guidPath: "guid"
+  },
+  {
+    id: "world-nuclear-news",
+    name: "WORLD-NUCLEAR-NEWS.ORG",
+    enabled: true,
+    contentCategory: "nuclear",
+    feedType: "rss",
+    url: "https://world-nuclear-news.org/rss",
+    itemPath: "rss.channel.item",
+    titlePath: "title",
+    urlPath: "link",
+    summaryPath: "description",
+    publishedAtPath: "pubDate",
+    guidPath: "guid"
+  },
+  {
+    id: "power-magazine",
+    name: "WWW.POWERMAG.COM",
+    enabled: true,
+    feedType: "rss",
+    url: "https://www.powermag.com/feed/",
+    itemPath: "rss.channel.item",
+    titlePath: "title",
+    urlPath: "link",
+    summaryPath: "description",
+    publishedAtPath: "pubDate",
+    guidPath: "guid"
   }
 ];
 

@@ -126,14 +126,14 @@ test('reports per-source errors without preventing another enabled source from b
   }
 });
 
-test('routes nuclear articles to Recall and Recall New Build only', () => {
+test('routes nuclear articles to Recall and RecallNewBuild only', () => {
   const article = {
     title: 'SMR project advances in the United States',
     summary: 'A new reactor vessel design will be tested.'
   };
 
   assert.equal(isNuclearRelatedArticle(article), true);
-  assert.deepEqual(getDestinationLibraries(article, {}), ['Recall', 'Recall New Build']);
+  assert.deepEqual(getDestinationLibraries(article, {}), ['Recall', 'RecallNewBuild']);
 });
 
 test('routes non-nuclear articles to RegSourceGRC only', () => {
@@ -153,8 +153,17 @@ test('routes classification case-insensitively and honors contentCategory overri
   };
 
   assert.equal(isNuclearRelatedArticle(article), true);
-  assert.deepEqual(getDestinationLibraries(article, { contentCategory: 'nuclear' }), ['Recall', 'Recall New Build']);
+  assert.deepEqual(getDestinationLibraries(article, { contentCategory: 'nuclear' }), ['Recall', 'RecallNewBuild']);
   assert.deepEqual(getDestinationLibraries({ title: 'Weather report', summary: 'No relevant content' }, { contentCategory: 'other' }), ['RegSourceGRC']);
+});
+
+test('routes nuclear-related articles to both Recall libraries even without a contentCategory override', () => {
+  const article = {
+    title: 'Nuclear fuel cycle update',
+    summary: 'A new reactor technology is discussed.'
+  };
+
+  assert.deepEqual(getDestinationLibraries(article, {}), ['Recall', 'RecallNewBuild']);
 });
 
 test('skips invalid dates, missing required fields, and old articles', () => {
