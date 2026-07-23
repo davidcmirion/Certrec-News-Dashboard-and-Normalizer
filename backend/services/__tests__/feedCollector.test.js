@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { parseFeedXml, refreshConfiguredArticles, normalizeFeedSource, filterFeedItems, getDestinationLibraries, isNuclearRelatedArticle } = require('../feedCollector');
-const feedSourcesModule = require('../../config/feedSources');
+const feedSourcesModule = require('../../config/feedSources').default;
 
 const rssXml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">

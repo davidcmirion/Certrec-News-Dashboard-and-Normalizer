@@ -1,6 +1,11 @@
 const { XMLParser } = require("fast-xml-parser");
 const pool = require("../db");
-const { getEnabledFeedSources } = require("../config/feedSources");
+
+const feedSourceModule = require("../config/feedSources");
+const feedSourceConfig = feedSourceModule.default || feedSourceModule;
+const getEnabledFeedSources = feedSourceConfig.getEnabledFeedSources;
+
+console.log("getEnabledFeedSources type:", typeof getEnabledFeedSources);
 
 function cleanText(value) {
   return String(value || "")
@@ -345,14 +350,26 @@ async function refreshFeedSource(source, options = {}) {
   const normalizedSource = normalizeFeedSource(source);
 
   const response = await fetch(normalizedSource.url, {
-    headers: {
-      "User-Agent": "Certrec-News-Dashboard/1.0"
-    }
-  });
+  headers: {
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+      "AppleWebKit/537.36 (KHTML, like Gecko) " +
+      "Chrome/126.0.0.0 Safari/537.36",
+    "Accept":
+      "application/rss+xml, application/xml, text/xml, " +
+      "application/xhtml+xml, text/html;q=0.9, */*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9"
+  }
+});
 
   if (!response.ok) {
-    throw new Error(`${normalizedSource.name} feed request failed with status ${response.status}.`);
-  }
+  throw new Error(
+    `${normalizedSource.name} feed request failed: ` +
+    `HTTP ${response.status} ${response.statusText}; ` +
+    `content-type: ${response.headers.get("content-type") || "unknown"}`
+  );
+}
+
 
   const xml = await response.text();
   const feedItems = parseFeedXml(xml, normalizedSource);
@@ -379,9 +396,21 @@ async function refreshFeedSource(source, options = {}) {
 
 async function refreshConfiguredArticles(sourceIds = null, options = {}) {
   const sources = getEnabledFeedSources(sourceIds);
+
+  console.log(
+    "Enabled feeds loaded by refreshConfiguredArticles:",
+    sources.map(source => ({
+      id: source.id,
+      name: source.name,
+      enabled: source.enabled,
+      url: source.url
+    }))
+  );
+
   const results = [];
 
   for (const source of sources) {
+
     try {
       const result = await refreshFeedSource(source, options);
       results.push({

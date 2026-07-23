@@ -33,7 +33,6 @@ The tool is intended for the three Data Team staff members who post articles for
 
 - GitHub and GitHub Codespaces for code storage and development
 - HTML, CSS, and JavaScript for the user-facing pages
-- Python for backend processing
 - Render for hosting
 - Neon Postgres for shared persistent article and claim data
 
