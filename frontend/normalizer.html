@@ -408,7 +408,22 @@
     "⁶": "",
     "⁷": "",
     "⁸": "",
-    "⁹": ""
+    "⁹": "",
+    "₂": "2",
+    "₀": "0",
+    "₁": "1",
+    "₃": "3",
+    "₄": "4",
+    "₅": "5",
+    "₆": "6",
+    "₇": "7",
+    "₈": "8",
+    "₉": "9",
+    "°": " degrees",
+    "•": "",
+    "[": "(",
+    "]": ")",
+    "′": "'"
   };
 
   const dashCharacters = new Set([
@@ -609,6 +624,37 @@
     }
 
     return wrapper.innerHTML;
+  }
+
+  function insertHtmlAtCursor(html, container) {
+    const selection = window.getSelection();
+
+    if (!selection.rangeCount) {
+      container.insertAdjacentHTML("beforeend", html);
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+
+    if (!container.contains(range.commonAncestorContainer)) {
+      container.insertAdjacentHTML("beforeend", html);
+      return;
+    }
+
+    range.deleteContents();
+
+    const fragment = range.createContextualFragment(html);
+    range.insertNode(fragment);
+
+    selection.removeAllRanges();
+    const newRange = document.createRange();
+    const lastNode = fragment.lastChild || fragment;
+
+    if (lastNode) {
+      newRange.setStartAfter(lastNode);
+      newRange.collapse(true);
+      selection.addRange(newRange);
+    }
   }
 
   function addMarkedText(parent, originalText, title) {
@@ -954,18 +1000,7 @@
 
     const cleanedHtml = cleanPastedHtml(sourceHtml);
 
-    // Retain existing text and add each new pasted item below it.
-    if (pasteBox.innerHTML.trim() && cleanedHtml.trim()) {
-      pasteBox.insertAdjacentHTML(
-        "beforeend",
-        "<p><br></p>"
-      );
-    }
-
-    pasteBox.insertAdjacentHTML(
-      "beforeend",
-      cleanedHtml
-    );
+    insertHtmlAtCursor(cleanedHtml, pasteBox);
 
     // New source text makes the previous output out of date.
     outputBox.innerHTML = "";
