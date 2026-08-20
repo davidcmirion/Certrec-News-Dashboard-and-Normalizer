@@ -141,6 +141,9 @@
       font-size: 14px;
       line-height: 1.55;
       white-space: normal;
+      overflow-wrap: anywhere;
+      word-wrap: break-word;
+      word-break: break-word;
     }
 
     .editable-box:focus {
@@ -996,7 +999,7 @@
     const text = clipboard.getData("text/plain");
 
     const sourceHtml =
-      html || text.replace(/\r?/g, "<br>");
+      html || text.replace(/\r\n?|\n/g, "<br>");
 
     const cleanedHtml = cleanPastedHtml(sourceHtml);
 

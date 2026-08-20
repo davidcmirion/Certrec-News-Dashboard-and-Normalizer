@@ -1,8 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { parseFeedXml, refreshConfiguredArticles, normalizeFeedSource, filterFeedItems, getDestinationLibraries, isNuclearRelatedArticle } = require('../feedCollector');
-const feedSourcesModule = require('../../config/feedSources').default;
+const { parseFeedXml, parseHtmlListing, extractArticleBody, refreshConfiguredArticles, normalizeFeedSource, filterFeedItems, getDestinationLibraries, isNuclearRelatedArticle, mapWithConcurrency } = require('../feedCollector');
+const feedSourcesModule = require('../../config/feedSources');
 
 const rssXml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
@@ -82,6 +82,37 @@ test('parses representative Atom XML into the normalized article shape', () => {
   assert.equal(articles[0].publishedAt, '2024-10-01T14:00:00.000Z');
 });
 
+test('extracts article text while removing navigation and script boilerplate', () => {
+  const content = extractArticleBody(`
+    <html><body><nav>Menu</nav><article>
+      <h1>Energy update</h1><p>Important article text.</p>
+      <script>tracking()</script>
+    </article><footer>Copyright</footer></body></html>`);
+
+  assert.match(content, /Energy update Important article text/);
+  assert.doesNotMatch(content, /Menu|tracking|Copyright/);
+});
+
+test('parses the World Nuclear Association HTML listing adapter', () => {
+  const source = normalizeFeedSource({
+    id: 'world-nuclear-association',
+    name: 'WORLD-NUCLEAR.ORG',
+    feedType: 'html',
+    url: 'https://world-nuclear.org/news-and-media'
+  });
+  const articles = parseHtmlListing(`
+    <div class="news_box_title"><a href="/news-and-media/press-statements/example">Example nuclear update</a></div>
+    <div class="news_box_date">Tuesday, 28 July 2026</div>
+    <div class="news_box_text"><p>Short summary.</p></div>
+  `, source);
+
+  assert.equal(articles.length, 1);
+  assert.equal(articles[0].title, 'Example nuclear update');
+  assert.equal(articles[0].url, 'https://world-nuclear.org/news-and-media/press-statements/example');
+  assert.equal(articles[0].author, 'World Nuclear Association');
+  assert.equal(articles[0].publishedAt, '2026-07-28T00:00:00.000Z');
+});
+
 test('reports per-source errors without preventing another enabled source from being processed', async () => {
   const originalFetch = global.fetch;
   global.fetch = async (url) => {
@@ -124,6 +155,89 @@ test('reports per-source errors without preventing another enabled source from b
     global.fetch = originalFetch;
     feedSourcesModule.feedSources = originalSources;
   }
+});
+
+test('processes configured sources concurrently while preserving source order', async () => {
+  const originalFetch = global.fetch;
+  const originalSources = feedSourcesModule.feedSources;
+  let activeRequests = 0;
+  let maximumActiveRequests = 0;
+  let releaseRequests;
+  const requestsReleased = new Promise(resolve => {
+    releaseRequests = resolve;
+  });
+
+  global.fetch = async () => {
+    activeRequests++;
+    maximumActiveRequests = Math.max(maximumActiveRequests, activeRequests);
+
+    if (activeRequests === 2) {
+      releaseRequests();
+    }
+
+    await requestsReleased;
+    activeRequests--;
+
+    return {
+      ok: true,
+      text: async () => rssXml
+    };
+  };
+
+  feedSourcesModule.feedSources = [
+    {
+      id: 'first',
+      name: 'First Source',
+      enabled: true,
+      feedType: 'rss',
+      url: 'https://example.com/first.xml',
+      library: 'Recall'
+    },
+    {
+      id: 'second',
+      name: 'Second Source',
+      enabled: true,
+      feedType: 'rss',
+      url: 'https://example.com/second.xml',
+      library: 'Recall'
+    }
+  ];
+
+  try {
+    const result = await refreshConfiguredArticles(null, {
+      cutoffDays: 10,
+      sourceConcurrency: 2
+    });
+
+    assert.equal(maximumActiveRequests, 2);
+    assert.deepEqual(
+      result.results.map(sourceResult => sourceResult.source),
+      ['First Source', 'Second Source']
+    );
+  } finally {
+    global.fetch = originalFetch;
+    feedSourcesModule.feedSources = originalSources;
+  }
+});
+
+test('limits concurrent mapper work', async () => {
+  let activeTasks = 0;
+  let maximumActiveTasks = 0;
+
+  const results = await mapWithConcurrency(
+    [1, 2, 3, 4],
+    2,
+    async value => {
+      activeTasks++;
+      maximumActiveTasks = Math.max(maximumActiveTasks, activeTasks);
+      await new Promise(resolve => setTimeout(resolve, 5));
+      activeTasks--;
+      return value * 2;
+    }
+  );
+
+  assert.equal(maximumActiveTasks, 2);
+  assert.deepEqual(results, [2, 4, 6, 8]);
 });
 
 test('routes nuclear articles to Recall and RecallNewBuild only', () => {

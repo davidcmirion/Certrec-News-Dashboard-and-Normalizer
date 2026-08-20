@@ -1,17 +1,100 @@
 const { XMLParser } = require("fast-xml-parser");
+const cheerio = require("cheerio");
 const pool = require("../db");
 
 const feedSourceModule = require("../config/feedSources");
 const feedSourceConfig = feedSourceModule.default || feedSourceModule;
 const getEnabledFeedSources = feedSourceConfig.getEnabledFeedSources;
-
-console.log("getEnabledFeedSources type:", typeof getEnabledFeedSources);
+const DEFAULT_SOURCE_CONCURRENCY = 6;
+const DEFAULT_ARTICLE_CONCURRENCY = 4;
+const MIN_ARTICLE_REQUEST_INTERVAL_MS = 1500;
+const MAX_FETCH_RETRIES = 3;
+const USER_AGENT = "NewsDepotBot/1.0 (+https://certrec.com/bot)";
+const hostRequestTimes = new Map();
+const hostRequestLocks = new Map();
 
 function cleanText(value) {
   return String(value || "")
     .replace(/<[^>]*>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function stripHtml(value) {
+  return cleanText(value);
+}
+
+function extractArticleBody(html) {
+  if (!html) return "";
+
+  const $ = cheerio.load(html);
+  $("script, style, nav, header, footer, aside, form, iframe, noscript, .ad, .ads, .advertisement, .sidebar, [role='navigation']").remove();
+  const candidates = ["article", "main", ".article-body", ".article__body", ".entry-content", ".post-content", ".content-body"];
+  let best = "";
+
+  for (const selector of candidates) {
+    $(selector).each((_, element) => {
+      const text = $(element)
+        .clone()
+        .find("br, p, div, h1, h2, h3, h4, h5, h6, li")
+        .append(" ")
+        .end()
+        .text()
+        .replace(/\s+/g, " ")
+        .trim();
+      if (text.length > best.length) best = text;
+    });
+    if (best.length >= 300) break;
+  }
+
+  return best || $("body").text().replace(/\s+/g, " ").trim();
+}
+
+function sleep(milliseconds) {
+  return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+
+async function withHostRateLimit(host, request) {
+  const previousRequest = hostRequestLocks.get(host) || Promise.resolve();
+  let release;
+  const currentRequest = new Promise(resolve => { release = resolve; });
+  hostRequestLocks.set(host, currentRequest);
+
+  await previousRequest;
+  const lastRequestAt = hostRequestTimes.get(host);
+  const wait = lastRequestAt
+    ? MIN_ARTICLE_REQUEST_INTERVAL_MS - (Date.now() - lastRequestAt)
+    : 0;
+  if (wait > 0) await sleep(wait);
+
+  try {
+    return await request();
+  } finally {
+    hostRequestTimes.set(host, Date.now());
+    release();
+    if (hostRequestLocks.get(host) === currentRequest) hostRequestLocks.delete(host);
+  }
+}
+
+async function fetchWithRetry(url, options = {}) {
+  let lastError;
+  for (let attempt = 0; attempt < MAX_FETCH_RETRIES; attempt++) {
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers: { "User-Agent": USER_AGENT, ...(options.headers || {}) }
+      });
+      if (response.ok) return response;
+      if (![429, 500, 502, 503, 504].includes(response.status)) {
+        throw new Error(`HTTP ${response.status} ${response.statusText || ""}`.trim());
+      }
+      lastError = new Error(`HTTP ${response.status} ${response.statusText || ""}`.trim());
+    } catch (error) {
+      lastError = error;
+    }
+    if (attempt < MAX_FETCH_RETRIES - 1) await sleep(250 * 2 ** attempt);
+  }
+  throw lastError;
 }
 
 function normalizeUrl(value) {
@@ -54,6 +137,10 @@ function toText(value) {
       return value.value;
     }
 
+    if (typeof value.name === "string") {
+      return value.name;
+    }
+
     if (typeof value.href === "string") {
       return value.href;
     }
@@ -93,6 +180,8 @@ function normalizeFeedSource(source) {
     titlePath: source.titlePath || "title",
     urlPath: source.urlPath || "link",
     summaryPath: source.summaryPath || (source.feedType === "atom" ? "summary" : "description"),
+    contentPath: source.contentPath || "content:encoded",
+    authorPath: source.authorPath || (source.feedType === "atom" ? "author.name" : "author"),
     publishedAtPath: source.publishedAtPath || (source.feedType === "atom" ? "updated" : "pubDate"),
     guidPath: source.guidPath || (source.feedType === "atom" ? "id" : "guid")
   };
@@ -206,6 +295,15 @@ function extractSummary(item, source) {
   return cleanText(toText(rawSummary));
 }
 
+function extractContent(item, source) {
+  const rawContent = getValueByPath(item, source.contentPath) || getValueByPath(item, "content:encoded");
+  return stripHtml(toText(rawContent));
+}
+
+function extractAuthor(item, source) {
+  return cleanText(toText(getValueByPath(item, source.authorPath) || getValueByPath(item, "dc:creator")));
+}
+
 function extractPublishedAt(item, source) {
   const rawPublishedAt =
     getValueByPath(item, source.publishedAtPath) ||
@@ -241,6 +339,8 @@ function normalizeFeedItems(parsedFeed, source) {
   return feedItems.map(item => ({
     title: extractTitle(item, normalizedSource),
     summary: extractSummary(item, normalizedSource),
+    content: extractContent(item, normalizedSource),
+    author: extractAuthor(item, normalizedSource),
     publishedAt: extractPublishedAt(item, normalizedSource),
     url: normalizeUrl(extractLinkValue(item, normalizedSource)),
     guid: extractGuid(item, normalizedSource)
@@ -268,7 +368,34 @@ function filterFeedItems(feedItems, options = {}) {
   });
 }
 
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+
+  const workerCount = Math.min(
+    items.length,
+    Math.max(1, Number(concurrency) || 1)
+  );
+
+  await Promise.all(
+    Array.from({ length: workerCount }, () => worker())
+  );
+
+  return results;
+}
+
 function parseFeedXml(xml, source) {
+  if (source.feedType === "html") {
+    return parseHtmlListing(xml, source);
+  }
+
   const parser = new XMLParser({
     ignoreAttributes: false,
     trimValues: true
@@ -276,6 +403,29 @@ function parseFeedXml(xml, source) {
 
   const parsedFeed = parser.parse(xml);
   return normalizeFeedItems(parsedFeed, source);
+}
+
+function parseHtmlListing(html, source) {
+  const $ = cheerio.load(html);
+  const baseUrl = new URL(source.url);
+
+  return $(".news_box_title a").map((_, element) => {
+    const link = $(element).attr("href");
+    const card = $(element).closest(".news_box_title").parent();
+    const dateText = card.find(".news_box_date").first().text().trim();
+    const summary = card.find(".news_box_text").first().text().replace(/\s+/g, " ").trim();
+    const publishedAt = new Date(dateText);
+
+    return {
+      title: cleanText($(element).text()),
+      summary,
+      content: "",
+      author: "World Nuclear Association",
+      publishedAt: Number.isNaN(publishedAt.getTime()) ? null : publishedAt.toISOString(),
+      url: link ? normalizeUrl(new URL(link, baseUrl).toString()) : null,
+      guid: link || null
+    };
+  }).get();
 }
 
 async function saveArticle(article, source) {
@@ -292,15 +442,20 @@ async function saveArticle(article, source) {
           canonical_url,
           title,
           summary,
+          content,
+          author,
+          dedupe_key,
           source_published_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (canonical_url)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (dedupe_key)
         DO UPDATE SET
           source = EXCLUDED.source,
           source_guid = COALESCE(EXCLUDED.source_guid, articles.source_guid),
           title = EXCLUDED.title,
           summary = EXCLUDED.summary,
+          content = EXCLUDED.content,
+          author = EXCLUDED.author,
           source_published_at = EXCLUDED.source_published_at
         RETURNING id
       `,
@@ -310,6 +465,9 @@ async function saveArticle(article, source) {
         article.url,
         article.title,
         article.summary,
+        article.content || article.summary,
+        article.author || null,
+        article.dedupeKey,
         article.publishedAt
       ]
     );
@@ -346,31 +504,39 @@ async function saveArticle(article, source) {
   }
 }
 
+async function articleExists(article, source) {
+  const result = await pool.query(
+    `SELECT id FROM articles
+    WHERE (source = $3 AND $1::text IS NOT NULL AND source_guid = $1)
+      OR canonical_url = $2
+     LIMIT 1`,
+   [article.guid || null, article.url, source.name]
+  );
+  return result.rowCount > 0;
+}
+
+async function hydrateArticle(article) {
+  if (article.content && article.content.length >= 300) return article;
+
+  const host = new URL(article.url).host;
+  return withHostRateLimit(host, async () => {
+    const response = await fetchWithRetry(article.url, {
+      headers: { Accept: "text/html,application/xhtml+xml" }
+    });
+    const html = await response.text();
+    const content = extractArticleBody(html);
+    return { ...article, content: content || article.summary };
+  });
+}
+
 async function refreshFeedSource(source, options = {}) {
   const normalizedSource = normalizeFeedSource(source);
 
-  const response = await fetch(normalizedSource.url, {
-  headers: {
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-      "AppleWebKit/537.36 (KHTML, like Gecko) " +
-      "Chrome/126.0.0.0 Safari/537.36",
-    "Accept":
-      "application/rss+xml, application/xml, text/xml, " +
-      "application/xhtml+xml, text/html;q=0.9, */*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9"
-  }
-});
-
-  if (!response.ok) {
-  throw new Error(
-    `${normalizedSource.name} feed request failed: ` +
-    `HTTP ${response.status} ${response.statusText}; ` +
-    `content-type: ${response.headers.get("content-type") || "unknown"}`
-  );
-}
-
-
+  const response = await fetchWithRetry(normalizedSource.url, {
+    headers: {
+      Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml"
+    }
+  });
   const xml = await response.text();
   const feedItems = parseFeedXml(xml, normalizedSource);
   const validItems = filterFeedItems(feedItems, options);
@@ -378,10 +544,17 @@ async function refreshFeedSource(source, options = {}) {
   let imported = 0;
   let skipped = 0;
 
-  for (const article of validItems) {
-    await saveArticle(article, normalizedSource);
-    imported++;
-  }
+  await mapWithConcurrency(
+    validItems,
+    options.articleConcurrency || DEFAULT_ARTICLE_CONCURRENCY,
+    async article => {
+      article.dedupeKey = `${normalizedSource.id}:${article.guid || article.url}`;
+      if (await articleExists(article, normalizedSource)) return;
+      const hydrated = await hydrateArticle(article);
+      await saveArticle(hydrated, normalizedSource);
+      imported++;
+    }
+  );
 
   skipped = feedItems.length - validItems.length;
 
@@ -407,28 +580,33 @@ async function refreshConfiguredArticles(sourceIds = null, options = {}) {
     }))
   );
 
-  const results = [];
-
-  for (const source of sources) {
-
-    try {
-      const result = await refreshFeedSource(source, options);
-      results.push({
-        ok: true,
-        ...result
-      });
-    } catch (error) {
-      results.push({
-        ok: false,
-        source: source.name,
-        library: source.library,
-        error: error.message,
-        feedItemsFound: 0,
-        articlesProcessed: 0,
-        articlesSkipped: 0
-      });
+  const results = await mapWithConcurrency(
+    sources,
+    options.sourceConcurrency || DEFAULT_SOURCE_CONCURRENCY,
+    async source => {
+      try {
+        const result = await refreshFeedSource(source, options);
+        return {
+          ok: true,
+          ...result
+        };
+      } catch (error) {
+        console.error(
+          `Feed refresh failed for ${source.name} (${source.url}):`,
+          error.message
+        );
+        return {
+          ok: false,
+          source: source.name,
+          library: source.library,
+          error: error.message,
+          feedItemsFound: 0,
+          articlesProcessed: 0,
+          articlesSkipped: 0
+        };
+      }
     }
-  }
+  );
 
   return {
     sourcesProcessed: results.length,
@@ -443,6 +621,12 @@ module.exports = {
   isNuclearRelatedArticle,
   normalizeFeedItems,
   normalizeFeedSource,
+  parseHtmlListing,
+  extractArticleBody,
+  fetchWithRetry,
+  hydrateArticle,
+  articleExists,
+  mapWithConcurrency,
   parseFeedXml,
   refreshFeedSource,
   refreshConfiguredArticles

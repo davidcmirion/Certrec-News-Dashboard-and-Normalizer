@@ -156,6 +156,23 @@
       width: 100%;
       border-collapse: collapse;
       min-width: 850px;
+      table-layout: fixed;
+    }
+
+    .source-column {
+      width: 46%;
+    }
+
+    .date-column {
+      width: 21%;
+    }
+
+    .status-column {
+      width: 15%;
+    }
+
+    .actions-column {
+      width: 18%;
     }
 
     th,
@@ -175,6 +192,15 @@
       letter-spacing: 0.03em;
     }
 
+    th.detail-column-header {
+      text-align: center;
+      visibility: hidden;
+    }
+
+    th.detail-column-header.is-visible {
+      visibility: visible;
+    }
+
     tr.claimed-row {
       background: var(--claimed-bg);
     }
@@ -183,10 +209,58 @@
       background: var(--posted-bg);
     }
 
+    tr.source-child-row.is-hidden {
+      display: none;
+    }
+
+    tr.source-group-row {
+      background: #eef1fa;
+    }
+
+    .source-group-button {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      width: 100%;
+      padding: 3px 0;
+      border: 0;
+      background: transparent;
+      color: var(--maroon);
+      font: inherit;
+      font-weight: 700;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .source-group-button:hover {
+      text-decoration: none;
+    }
+
+    .source-group-button:hover .source-group-name {
+      text-decoration: underline;
+    }
+
+    .source-group-chevron {
+      display: inline-block;
+      width: 14px;
+      transition: transform 120ms ease;
+    }
+
+    .source-group-button[aria-expanded="true"] .source-group-chevron {
+      transform: rotate(90deg);
+    }
+
+    .source-group-count {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
     .article-link {
       color: var(--maroon);
       font-weight: 700;
       text-decoration: none;
+      overflow-wrap: anywhere;
     }
 
     .article-link:hover {
@@ -219,7 +293,16 @@
     .actions {
       display: flex;
       gap: 8px;
-      white-space: nowrap;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .date,
+    .status-available,
+    .status-claimed,
+    .status-posted,
+    .actions-cell {
+      text-align: center;
     }
 
     .empty-message {
@@ -272,13 +355,18 @@
 
       <div class="table-wrap">
         <table>
+          <colgroup>
+            <col class="source-column">
+            <col class="date-column">
+            <col class="status-column">
+            <col class="actions-column">
+          </colgroup>
           <thead>
             <tr>
-              <th>Article Title</th>
               <th>Source</th>
-              <th>Publication Date</th>
-              <th>Claim Status</th>
-              <th>Actions</th>
+              <th class="detail-column-header">Publication Date</th>
+              <th class="detail-column-header">Claim Status</th>
+              <th class="detail-column-header">Actions</th>
             </tr>
           </thead>
           <tbody id="articleTableBody"></tbody>
@@ -287,20 +375,22 @@
     </section>
 
     <p class="footer-note">
-      Article feed at 3, more to be added soon.
+      Article feed at 17, more to be added soon!
     </p>
   </main>
 
   <script>
-    const API_BASE_URL = "http://localhost:3001/api"; 
+    const API_BASE_URL = "/api";
 
 const repositoryFilter = document.getElementById("repositoryFilter");
 const dateFilter = document.getElementById("dateFilter");
 const articleTableBody = document.getElementById("articleTableBody");
 const refreshButton = document.getElementById("refreshButton");
 const normalizerButton = document.getElementById("normalizerButton");
+const ALL_DATES = "All";
 
 let articles = [];
+const expandedSources = new Set();
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -375,7 +465,7 @@ function buildDateFilter() {
   dateFilter.innerHTML = "";
 
   const allOption = document.createElement("option");
-  allOption.value = "All";
+  allOption.value = ALL_DATES;
   allOption.textContent = "All";
   dateFilter.appendChild(allOption);
 
@@ -389,14 +479,16 @@ function buildDateFilter() {
   dateFilter.value =
     [...dateFilter.options].some(option => option.value === selectedDate)
       ? selectedDate
-      : "All";
+      : ALL_DATES;
 }
 
 function getFilteredArticles() {
+  const selectedDate = dateFilter.value || ALL_DATES;
+
   return articles.filter(article => {
     const matchesDate =
-      dateFilter.value === "All" ||
-      dateKey(article.published) === dateFilter.value;
+      selectedDate === ALL_DATES ||
+      dateKey(article.published) === selectedDate;
 
     const matchesLibrary =
       !article.library ||
@@ -406,13 +498,111 @@ function getFilteredArticles() {
   });
 }
 
+function groupArticlesBySource(filteredArticles) {
+  const groups = new Map();
+
+  filteredArticles.forEach(article => {
+    const source = article.source || "Unknown source";
+    if (!groups.has(source)) {
+      groups.set(source, []);
+    }
+    groups.get(source).push(article);
+  });
+
+  return groups;
+}
+
+function updateTableHeaders() {
+  const showDetailHeaders = expandedSources.size > 0;
+  document.querySelectorAll(".detail-column-header").forEach(header => {
+    header.classList.toggle("is-visible", showDetailHeaders);
+  });
+}
+
+function renderArticleRow(article, groupId, isExpanded) {
+  const canClaim =
+    article.library !== "RegSourceGRC" &&
+    article.workflow_status !== "posted";
+
+  const claimButton = !canClaim
+    ? ""
+    : article.workflow_status === "claimed"
+      ? `
+        <button
+          class="button button-claim"
+          type="button"
+          data-action="release"
+          data-id="${article.id}"
+        >
+          Unclaim
+        </button>
+      `
+      : `
+        <button
+          class="button button-claim"
+          type="button"
+          data-action="claim"
+          data-id="${article.id}"
+        >
+          Claim
+        </button>
+      `;
+
+  const postButton = article.workflow_status === "posted"
+    ? `
+      <button
+        class="button button-not-posted"
+        type="button"
+        data-action="not-posted"
+        data-id="${article.id}"
+      >
+        Not Posted
+      </button>
+    `
+    : `
+      <button
+        class="button button-posted"
+        type="button"
+        data-action="posted"
+        data-id="${article.id}"
+      >
+        Mark Posted
+      </button>
+    `;
+
+  const safeTitle = escapeHtml(article.title || "Untitled article");
+  const articleTitle = article.canonical_url
+    ? `<a class="article-link" href="${escapeHtml(article.canonical_url)}" target="_blank" rel="noopener noreferrer">${safeTitle}</a>`
+    : `<span class="article-link">${safeTitle}</span>`;
+
+  return `
+    <tr
+      class="source-child-row ${getRowClass(article.workflow_status)}${isExpanded ? "" : " is-hidden"}"
+      data-source-child="${groupId}"
+    >
+      <td>${articleTitle}</td>
+      <td class="date">${formatPublishedDate(article.published)}</td>
+      <td class="${getStatusClass(article.workflow_status)}">
+        ${displayStatus(article.workflow_status)}
+      </td>
+      <td class="actions-cell">
+        <div class="actions">
+          ${claimButton}
+          ${postButton}
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
 function renderArticles() {
   const filteredArticles = getFilteredArticles();
 
   if (filteredArticles.length === 0) {
+    updateTableHeaders();
     articleTableBody.innerHTML = `
       <tr>
-        <td colspan="5" class="empty-message">
+        <td colspan="4" class="empty-message">
           No articles match the selected filters.
         </td>
       </tr>
@@ -420,85 +610,38 @@ function renderArticles() {
     return;
   }
 
-  articleTableBody.innerHTML = filteredArticles.map(article => {
-    const canClaim =
-      article.library !== "RegSourceGRC" &&
-      article.workflow_status !== "posted";
+  articleTableBody.innerHTML = [...groupArticlesBySource(filteredArticles)]
+    .map(([source, sourceArticles]) => {
+      const isExpanded = expandedSources.has(source);
+      const groupId = `source-${source.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
 
-    const claimButton = !canClaim
-      ? ""
-      : article.workflow_status === "claimed"
-        ? `
-          <button
-            class="button button-claim"
-            type="button"
-            data-action="release"
-            data-id="${article.id}"
-          >
-            Unclaim
-          </button>
-        `
-        : `
-          <button
-            class="button button-claim"
-            type="button"
-            data-action="claim"
-            data-id="${article.id}"
-          >
-            Claim
-          </button>
-        `;
-
-    const postButton = article.workflow_status === "posted"
-      ? `
-        <button
-          class="button button-not-posted"
-          type="button"
-          data-action="not-posted"
-          data-id="${article.id}"
-        >
-          Not Posted
-        </button>
-      `
-      : `
-        <button
-          class="button button-posted"
-          type="button"
-          data-action="posted"
-          data-id="${article.id}"
-        >
-          Mark Posted
-        </button>
+      return `
+        <tr class="source-group-row">
+          <td colspan="4">
+            <button
+              class="source-group-button"
+              type="button"
+              data-source-toggle="${escapeHtml(source)}"
+              aria-controls="${groupId}"
+              aria-expanded="${isExpanded}"
+            >
+              <span class="source-group-chevron" aria-hidden="true">&#9654;</span>
+              <span class="source-group-name">${escapeHtml(source)}</span>
+              <span class="source-group-count">(${sourceArticles.length})</span>
+            </button>
+          </td>
+        </tr>
+        ${sourceArticles.map(article => renderArticleRow(article, groupId, isExpanded)).join("")}
       `;
-
-    const safeTitle = escapeHtml(article.title || "Untitled article");
-    const articleTitle = article.canonical_url
-      ? `<a class="article-link" href="${escapeHtml(article.canonical_url)}" target="_blank" rel="noopener noreferrer">${safeTitle}</a>`
-      : `<span class="article-link">${safeTitle}</span>`;
-
-    return `
-      <tr class="${getRowClass(article.workflow_status)}">
-        <td>${articleTitle}</td>
-        <td class="source">${escapeHtml(article.source || "Unknown source")}</td>
-        <td class="date">${formatPublishedDate(article.published)}</td>
-        <td class="${getStatusClass(article.workflow_status)}">
-          ${displayStatus(article.workflow_status)}
-        </td>
-        <td>
-          <div class="actions">
-            ${claimButton}
-            ${postButton}
-          </div>
-        </td>
-      </tr>
-    `;
-  }).join("");
+    })
+    .join("");
+  updateTableHeaders();
 }
 
 async function loadArticles() {
   articleTableBody.innerHTML = `
     <tr>
-      <td colspan="5" class="empty-message">Loading articles...</td>
+      <td colspan="4" class="empty-message">Loading articles...</td>
     </tr>
   `;
 
@@ -528,7 +671,7 @@ async function loadArticles() {
     console.error(error);
     articleTableBody.innerHTML = `
       <tr>
-        <td colspan="5" class="empty-message">
+        <td colspan="4" class="empty-message">
           Could not load articles: ${escapeHtml(error.message)}
         </td>
       </tr>
@@ -582,6 +725,29 @@ async function updateArticle(articleId, action) {
 }
 
 articleTableBody.addEventListener("click", async event => {
+  const sourceToggle = event.target.closest("[data-source-toggle]");
+  if (sourceToggle) {
+    const source = sourceToggle.dataset.sourceToggle;
+    const groupId = sourceToggle.getAttribute("aria-controls");
+    const groupRows = articleTableBody.querySelectorAll(
+      `[data-source-child="${groupId}"]`
+    );
+    const isExpanded = sourceToggle.getAttribute("aria-expanded") === "true";
+
+    if (isExpanded) {
+      expandedSources.delete(source);
+    } else {
+      expandedSources.add(source);
+    }
+
+    sourceToggle.setAttribute("aria-expanded", String(!isExpanded));
+    groupRows.forEach(row => {
+      row.classList.toggle("is-hidden", isExpanded);
+    });
+    updateTableHeaders();
+    return;
+  }
+
   const button = event.target.closest("button[data-action]");
   if (!button) return;
 
@@ -589,7 +755,7 @@ articleTableBody.addEventListener("click", async event => {
 });
 
 repositoryFilter.addEventListener("change", async () => {
-  dateFilter.value = "All";
+  dateFilter.value = ALL_DATES;
   await loadArticles();
 });
 

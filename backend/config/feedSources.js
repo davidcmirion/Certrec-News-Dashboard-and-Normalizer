@@ -43,7 +43,7 @@ let feedSources = [
   {
     id: "iaea-top-news",
     name: "IAEA Top News",
-    enabled: false,
+    enabled: true,
     feedType: "rss",
     url: "https://www.iaea.org/feeds/topnews",
     library: "Recall",
@@ -82,7 +82,61 @@ let feedSources = [
     name: "UTILITYDIVE.COM",
     enabled: true,
     feedType: "rss",
-    url: "https://utilitydive.com/feeds/news",
+    url: "https://www.utilitydive.com/feeds/news/",
+    library: "RegSourceGRC",
+    contentCategory: "general"
+  },
+  {
+    id: "cleantechnica",
+    name: "CLEANTECHNICA.COM",
+    enabled: true,
+    feedType: "rss",
+    url: "https://cleantechnica.com/feed/",
+    library: "RegSourceGRC",
+    contentCategory: "general"
+  },
+  {
+    id: "na-windpower",
+    name: "NAWINDPOWER.COM",
+    enabled: true,
+    feedType: "rss",
+    url: "https://nawindpower.com/feed/",
+    library: "RegSourceGRC",
+    contentCategory: "general"
+  },
+  {
+    id: "solarlove",
+    name: "SOLARLOVE.ORG",
+    enabled: true,
+    feedType: "rss",
+    url: "https://solarlove.org/feed/",
+    library: "RegSourceGRC",
+    contentCategory: "general"
+  },
+  {
+    id: "iso-newswire",
+    name: "ISONEWSWIRE.COM",
+    enabled: true,
+    feedType: "rss",
+    url: "https://isonewswire.com/feed/",
+    library: "RegSourceGRC",
+    contentCategory: "general"
+  },
+  {
+    id: "ferc",
+    name: "FERC",
+    enabled: true,
+    feedType: "rss",
+    url: "https://ecollection.ferc.gov/api/rssfeed",
+    library: "RegSourceGRC",
+    contentCategory: "general"
+  },
+  {
+    id: "energy-gov-clean-cities",
+    name: "ENERGY.GOV CLEAN CITIES",
+    enabled: true,
+    feedType: "rss",
+    url: "https://cleancities.energy.gov/news-events/rss",
     library: "RegSourceGRC",
     contentCategory: "general"
   },
@@ -98,24 +152,27 @@ let feedSources = [
   {
     id: "energy-gov-nuclear",
     name: "ENERGY.GOV",
-    enabled: false,
+    enabled: true,
     feedType: "rss",
+    url: "https://www.energy.gov/ne/rss.xml",
     library: "Recall",
     contentCategory: "nuclear"
   },
   {
     id: "nrc-news-releases",
     name: "NRC PRESS RELEASE",
-    enabled: false,
+    enabled: true,
     feedType: "rss",
+    url: "https://www.nrc.gov/public-involve/rss?feed=news",
     library: "Recall",
     contentCategory: "nuclear"
   },
   {
     id: "world-nuclear-association",
     name: "WORLD-NUCLEAR.ORG",
-    enabled: false,
-    feedType: "rss",
+    enabled: true,
+    feedType: "html",
+    url: "https://world-nuclear.org/news-and-media",
     library: "Recall",
     contentCategory: "nuclear"
   }

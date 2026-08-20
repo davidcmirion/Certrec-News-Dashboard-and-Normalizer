@@ -46,6 +46,8 @@ const whereClause = `WHERE ${filters.join(" AND ")}`;
           a.canonical_url,
           a.title,
           a.summary,
+          a.content,
+          a.author,
           a.source_published_at,
           a.workflow_status,
           a.claimed_library,
